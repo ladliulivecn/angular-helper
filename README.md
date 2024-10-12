@@ -1,71 +1,59 @@
-# angular-helper README
+# Angular助手
 
-This is the README for your extension "angular-helper". After writing up a brief description, we recommend including the following sections.
+这是"Angular助手"VS Code扩展的README文件。这个扩展旨在提高Angular开发的效率和便利性。
 
-## Features
+## 功能
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+该扩展提供以下主要功能:
 
-For example if there is an image subfolder under your extension project workspace:
+1. AngularJS文件解析
+   - 解析和识别AngularJS特定语法和结构
+   - 提供语法高亮和代码补全
 
-\!\[feature X\]\(images/feature-x.png\)
+2. HTML和JS文件之间的智能导航
+   - 在HTML模板和相关的JavaScript/TypeScript控制器之间快速跳转
+   - 查看组件、指令、服务等的定义和引用
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
 
-## Requirements
+> 提示: 我们建议使用简短、清晰的动画来展示扩展的主要功能。
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+## 要求
 
-## Extension Settings
+- VS Code 1.93.0 或更高版本
+- 在工作区中包含Angular项目
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+## 扩展设置
 
-For example:
+该扩展提供以下设置:
 
-This extension contributes the following settings:
+* `angularHelper.enable`: 启用/禁用此扩展。
+* `angularHelper.parseMode`: 设置解析模式,可选值为 `strict` 或 `loose`。
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+## 已知问题
 
-## Known Issues
+- 暂时不支持Angular 1.x版本以下的项目
+- 在非常大的项目中,首次解析可能需要较长时间
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
-
-## Release Notes
-
-Users appreciate release notes as you update your extension.
+## 发布说明
 
 ### 1.0.0
 
-Initial release of ...
+- 初始发布
+- 实现AngularJS文件解析
+- 支持HTML和JS文件间的定义查看和跳转
 
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
 
 ---
 
-## Following extension guidelines
+## 遵循扩展指南
 
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
+我们确保遵循了VS Code扩展开发的最佳实践。详情请参阅:
 
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
+* [扩展指南](https://code.visualstudio.com/api/references/extension-guidelines)
 
-## Working with Markdown
+## 更多信息
 
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
+* [Visual Studio Code的Markdown支持](http://code.visualstudio.com/docs/languages/markdown)
+* [Markdown语法参考](https://help.github.com/articles/markdown-basics/)
 
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+**祝使用愉快!**
