@@ -35,9 +35,16 @@ export async function activate(context: vscode.ExtensionContext) {
 
 		context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(handleConfigChange));
 
+		context.subscriptions.push(
+			vscode.commands.registerCommand('angularHelper.outputPerformanceReport', () => {
+				definitionProvider.outputPerformanceReport();
+			})
+		);
+
 		console.log('Angular 助手扩展已成功激活');
-	} catch (error) {
+	} catch (error: unknown) {
 		console.error('激活 Angular 助手扩展时出错:', error);
+		vscode.window.showErrorMessage(`Angular 助手扩展激活失败: ${error instanceof Error ? error.message : '未知错误'}`);
 	}
 }
 
@@ -46,9 +53,11 @@ export async function activate(context: vscode.ExtensionContext) {
  * @param {vscode.ConfigurationChangeEvent} e - 配置变更事件
  */
 async function handleConfigChange(e: vscode.ConfigurationChangeEvent) {
-	if (e.affectsConfiguration('angularDefinitionProvider')) {
+	if (e.affectsConfiguration('angularDefinitionProvider') || e.affectsConfiguration('angularHelper')) {
 		console.log('Angular 助手配置已更改，正在重新初始化...');
 		angularParser = new AngularParser();
+		const definitionProvider = new DefinitionProvider(angularParser);
+		vscode.languages.registerDefinitionProvider(['html', 'javascript'], definitionProvider);
 		await initializeParser();
 	}
 }
