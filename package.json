@@ -23,6 +23,10 @@
         "angularDefinitionProvider.excludePatterns": {
           "type": "array",
           "default": [
+            ".git/**",
+            ".history/**",
+            ".idea/**",
+            ".vscode/**",
             "doc/**"
           ],
           "description": "用于排除解析的文件或文件夹的数组。"
@@ -52,6 +56,28 @@
           "type": "boolean",
           "default": false,
           "description": "启用性能日志记录。启用后，将记录定义查找的性能数据。"
+        },
+        "angularHelper.enableLogging": {
+          "type": "boolean",
+          "default": true,
+          "description": "启用或禁用日志输出。禁用可能会略微提高性能。"
+        },
+        "angularHelper.rootDirAliases": {
+          "type": "object",
+          "default": {
+            "__ROOT__": "",
+            "__PUBLIC__": "Public"
+          },
+          "description": "根目录别名映射。键是别名，值是相对于工作区根目录的路径。"
+        },
+        "angularHelper.ignoreScriptPatterns": {
+          "type": "array",
+          "default": [
+            "*.min.js",
+            "http://*",
+            "https://*"
+          ],
+          "description": "要忽略的脚本文件模式。支持通配符 *。"
         }
       }
     },

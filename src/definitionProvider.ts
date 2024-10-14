@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { AngularDefinition, AngularParser, FileInfo } from './angularParser';
 import { LRUCache } from 'lru-cache';
 import * as path from 'path';
+import { log, logError } from './extension';
 
 /**
  * DefinitionProvider 类实现了 vscode.DefinitionProvider 接口
@@ -49,7 +50,6 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
         }
         const word = document.getText(wordRange);
 
-        // 构建缓存键，使用文档URI和单词组合以确保唯一性
         const cacheKey = `${document.uri.toString()}:${word}`;
         const cachedResult = this.cache.get(cacheKey);
         if (cachedResult) {
@@ -59,19 +59,16 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 
         let result: vscode.Location | undefined;
 
-        // 根据不同的文件类型和上下文选择适当的查找方法
-        if (this.isAngularExpression(document, position)) {
-            // 对于Angular表达式，在HTML中查找定义
-            result = await this.findAngularExpressionDefinitionInHtml(word, document);
-        } else if (document.languageId === 'html') {
-            // 对于HTML文件中的普通单词，在TypeScript文件中查找定义
-            result = await this.findDefinitionInTypeScript(word, document);
-        } else if (['typescript', 'javascript'].includes(document.languageId)) {
-            // 对于TypeScript/JavaScript文件中的单词，在HTML文件中查找使用位置
-            result = this.findDefinitionInHtml(word);
+        if (document.languageId === 'html') {
+            if (this.isAngularExpression(document, position)) {
+                result = await this.findAngularExpressionDefinitionInHtml(word, document);
+            } else {
+                result = await this.findDefinitionInAssociatedJs(word, document);
+            }
+        } else if (document.languageId === 'javascript') {
+            result = await this.findDefinitionInHtmlAndJs(word, document);
         }
 
-        // 如果找到结果，更新缓存
         if (result) {
             this.cache.set(cacheKey, result);
         }
@@ -104,8 +101,10 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
      */
     private async findAngularExpressionDefinitionInHtml(property: string, document: vscode.TextDocument): Promise<vscode.Location | undefined> {
         const content = document.getText();
-        // 构建正则表达式来匹配ng-*属性和{{}}插值表达式
-        const regex = new RegExp(`(ng-[a-zA-Z-]+="[^"]*${property}[^"]*")|({{[^}]*${property}[^}]*}})`, 'g');
+        
+        // 改进的正则表达式，匹配 AngularJS (1.x) 表达式
+        const regex = new RegExp(`(ng-[a-zA-Z-]+="[^"]*\\b${property}\\b[^"]*")|({{[^}]*\\b${property}\\b[^}]*}})`, 'g');
+        
         const matches = Array.from(content.matchAll(regex));
 
         // 如果在当前HTML文件中找到匹配，返回第一个匹配的位置
@@ -120,19 +119,20 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 
         // 如果在当前HTML文件中没找到，尝试在相关的JS文件中查找
         const jsFiles = await vscode.workspace.findFiles('**/*.js');
-        return this.searchInFiles(jsFiles, regex);
+        return this.searchInFiles(jsFiles, new RegExp(`\\b${property}\\b`, 'g'), property);
     }
 
     /**
      * 在文件中搜索定义
      * @param {vscode.Uri[]} files - 要搜索的文件 URI 数组
      * @param {RegExp} regex - 搜索用的正则表达式
+     * @param {string} property - 要查找的属性
      * @returns {Promise<vscode.Location | undefined>} 定义位置
      */
-    private async searchInFiles(files: vscode.Uri[], regex: RegExp): Promise<vscode.Location | undefined> {
+    private async searchInFiles(files: vscode.Uri[], regex: RegExp, property: string): Promise<vscode.Location | undefined> {
         for (const file of files) {
             if (!this.isFileInWorkspace(file)) {
-                console.warn(`Skipping file outside of workspace: ${file.fsPath}`);
+                logError(`跳过工作区外的文件: ${file.fsPath}`, new Error());
                 continue;
             }
 
@@ -141,13 +141,36 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
                 const otherContent = otherDocument.getText();
                 const match = regex.exec(otherContent);
                 if (match && match.index !== undefined) {
-                    return new vscode.Location(file, otherDocument.positionAt(match.index));
+                    // 找到匹配后，进一步分析上下文以确保它是一个有效的定义
+                    const line = otherDocument.lineAt(otherDocument.positionAt(match.index).line);
+                    if (this.isValidDefinition(line.text, property)) {
+                        return new vscode.Location(file, otherDocument.positionAt(match.index));
+                    }
                 }
             } catch (error) {
-                console.error(`Error opening ${file.fsPath}:`, error);
+                logError(`打开 ${file.fsPath} 时出错:`, error);
             }
         }
         return undefined;
+    }
+
+    /**
+     * 检查是否为有效的定义
+     * @param {string} lineText - 包含匹配的行文本
+     * @param {string} property - 要查找的属性
+     * @returns {boolean} 是否为有效的定义
+     */
+    private isValidDefinition(lineText: string, property: string): boolean {
+        // 检查是否是函数定义、变量声明或类属性
+        const definitionPatterns = [
+            new RegExp(`function\\s+${property}\\b`),
+            new RegExp(`\\b${property}\\s*=`),
+            new RegExp(`\\b${property}\\s*:`),
+            new RegExp(`\\bclass\\s+${property}\\b`),
+            new RegExp(`\\b${property}\\s*\\(`),
+        ];
+
+        return definitionPatterns.some(pattern => pattern.test(lineText));
     }
 
     /**
@@ -173,7 +196,7 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
         const allFiles = this.angularParser.getAllParsedFiles();
         for (const fileName of allFiles) {
             if (!this.isFileInWorkspace(vscode.Uri.file(fileName))) {
-                console.warn(`Skipping file outside of workspace: ${fileName}`);
+                logError(`Skipping file outside of workspace: ${fileName}`, new Error());
                 continue;
             }
 
@@ -302,7 +325,7 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
         // 每100次操作后，计算并输出平均时间
         if (this.performanceLog[operation].length % 100 === 0) {
             const average = this.performanceLog[operation].reduce((a, b) => a + b, 0) / this.performanceLog[operation].length;
-            console.log(`Average time for ${operation}: ${average.toFixed(2)}ms`);
+            log(`Average time for ${operation}: ${average.toFixed(2)}ms`);
         }
     }
 
@@ -311,14 +334,48 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
      */
     public outputPerformanceReport() {
         if (!this.enablePerformanceLogging) {
-            console.log('Performance logging is disabled.');
+            log('Performance logging is disabled.');
             return;
         }
 
-        console.log('Performance Report:');
+        log('Performance Report:');
         for (const [operation, times] of Object.entries(this.performanceLog)) {
             const average = times.reduce((a, b) => a + b, 0) / times.length;
-            console.log(`${operation}: Average ${average.toFixed(2)}ms, Count: ${times.length}`);
+            log(`${operation}: Average ${average.toFixed(2)}ms, Count: ${times.length}`);
         }
+    }
+
+    private async findDefinitionInAssociatedJs(word: string, document: vscode.TextDocument): Promise<vscode.Location | undefined> {
+        const associatedJsFiles = this.angularParser.getAssociatedJsFiles(document.fileName);
+        for (const jsFile of associatedJsFiles) {
+            const jsUri = vscode.Uri.file(jsFile);
+            const jsDocument = await vscode.workspace.openTextDocument(jsUri);
+            const result = await this.findDefinitionInTypeScript(word, jsDocument);
+            if (result) {
+                return result;
+            }
+        }
+        return undefined;
+    }
+
+    private async findDefinitionInHtmlAndJs(word: string, document: vscode.TextDocument): Promise<vscode.Location | undefined> {
+        // 首先在当前 JS 文件中查找
+        const result = await this.findDefinitionInTypeScript(word, document);
+        if (result) {
+            return result;
+        }
+
+        // 如果在 JS 中没找到，查找关联的 HTML 文件
+        const associatedHtmlFiles = this.angularParser.getAssociatedHtmlFiles(document.fileName);
+        for (const htmlFile of associatedHtmlFiles) {
+            const htmlUri = vscode.Uri.file(htmlFile);
+            const htmlDocument = await vscode.workspace.openTextDocument(htmlUri);
+            const htmlResult = this.findDefinitionInCurrentHtml(word, htmlDocument);
+            if (htmlResult) {
+                return htmlResult;
+            }
+        }
+
+        return undefined;
     }
 }
