@@ -10,15 +10,40 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onLanguage:html",
+    "onLanguage:javascript",
+    "onLanguage:typescript"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
-    "commands": [
-      {
-        "command": "angular-helper.helloWorld",
-        "title": "Hello World"
+    "configuration": {
+      "title": "Angular Definition Provider",
+      "properties": {
+        "angularDefinitionProvider.excludePatterns": {
+          "type": "array",
+          "default": [
+            "doc/**"
+          ],
+          "description": "用于排除解析的文件或文件夹的数组。"
+        },
+        "angularDefinitionProvider.maxConcurrentParsing": {
+          "type": "number",
+          "default": 5,
+          "description": "最大并发解析文件数"
+        },
+        "angularDefinitionProvider.maxCachedFiles": {
+          "type": "number",
+          "default": 100,
+          "description": "最大缓存文件数"
+        },
+        "angularDefinitionProvider.cacheTTL": {
+          "type": "number",
+          "default": 3600000,
+          "description": "缓存生存时间(毫秒),默认为1小时"
+        }
       }
-    ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
@@ -35,16 +60,19 @@
     "test": "vscode-test"
   },
   "devDependencies": {
-    "@types/vscode": "^1.93.0",
     "@types/mocha": "^10.0.8",
     "@types/node": "20.x",
+    "@types/vscode": "^1.93.0",
     "@typescript-eslint/eslint-plugin": "^8.7.0",
     "@typescript-eslint/parser": "^8.7.0",
-    "eslint": "^9.11.1",
-    "esbuild": "^0.24.0",
-    "npm-run-all": "^4.1.5",
-    "typescript": "^5.6.2",
     "@vscode/test-cli": "^0.0.10",
-    "@vscode/test-electron": "^2.4.1"
+    "@vscode/test-electron": "^2.4.1",
+    "esbuild": "^0.24.0",
+    "eslint": "^9.11.1",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.6.2"
+  },
+  "dependencies": {
+    "lru-cache": "^11.0.1"
   }
 }
