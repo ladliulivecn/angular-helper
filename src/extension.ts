@@ -18,10 +18,9 @@ let isInitializing = false;
 let cancelTokenSource: vscode.CancellationTokenSource | undefined;
 
 /**
- * 激活扩展
- * 这个函数在扩展被激活时被调用。它设置了必要的实例和事件监听器，
- * 并初始化了解析器。
- * @param {vscode.ExtensionContext} context - 扩展上下文，提供了访问扩展的各种资源的方法
+ * 激活扩展。
+ * 这个函数在扩展被激活时被调用。它设置了必要的实例和事件监听器，并初始化了解析器。
+ * @param {vscode.ExtensionContext} context - 扩展上下文，提供了访问扩展的各种资源的方法。
  */
 export async function activate(context: vscode.ExtensionContext) {
 	try {
@@ -46,6 +45,26 @@ export async function activate(context: vscode.ExtensionContext) {
 			})
 		);
 
+		context.subscriptions.push(
+			vscode.window.onDidChangeActiveTextEditor(async (editor) => {
+				if (editor && angularParser) {
+					try {
+						await angularParser.prioritizeCurrentFile(editor.document);
+					} catch (error) {
+						logError('优先解析当前文件时出错:', error);
+					}
+				}
+			})
+		);
+
+		if (vscode.window.activeTextEditor && angularParser) {
+			try {
+				await angularParser.prioritizeCurrentFile(vscode.window.activeTextEditor.document);
+			} catch (error) {
+				logError('优先解析当前文件时出错:', error);
+			}
+		}
+
 		log('Angular 助手扩展已成功激活');
 	} catch (error: unknown) {
 		logError('激活 Angular 助手扩展时出错:', error);
@@ -54,7 +73,7 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 /**
- * 注册提供者
+ * 注册提供者。
  * 这个函数注册了定义提供者和各种事件监听器。
  */
 function registerProviders() {
@@ -62,22 +81,30 @@ function registerProviders() {
 		vscode.languages.registerDefinitionProvider(['html', 'javascript'], definitionProvider!),
 		vscode.workspace.onDidChangeTextDocument(async event => {
 			if (['html', 'javascript'].includes(event.document.languageId) && angularParser) {
-				await angularParser.parseFile(event.document.uri);
+				try {
+					await angularParser.updateFileIndex(event.document.uri);
+				} catch (error) {
+					logError(`更新文件索引时出错 ${event.document.uri.fsPath}:`, error);
+				}
 			}
 		}),
 		vscode.workspace.onDidOpenTextDocument(async document => {
 			if (['html', 'javascript'].includes(document.languageId) && angularParser) {
 				log(`优先解析新打开的文件: ${document.fileName}`);
-				await angularParser.parseFile(document.uri);
+				try {
+					await angularParser.updateFileIndex(document.uri);
+				} catch (error) {
+					logError(`更新新打开文件的索引时出错 ${document.fileName}:`, error);
+				}
 			}
 		})
 	);
 }
 
 /**
- * 处理配置变更
+ * 处理配置变更。
  * 当扩展的配置发生变化时，这个函数会被调用。它会重新初始化解析器和提供者。
- * @param {vscode.ConfigurationChangeEvent} e - 配置变更事件，包含了哪些配置发生了变化的信息
+ * @param {vscode.ConfigurationChangeEvent} e - 配置变更事件，包含了哪些配置发生了变化的信息。
  */
 async function handleConfigChange(e: vscode.ConfigurationChangeEvent) {
 	if (e.affectsConfiguration('angularDefinitionProvider') || e.affectsConfiguration('angularHelper')) {
@@ -107,9 +134,9 @@ async function handleConfigChange(e: vscode.ConfigurationChangeEvent) {
 }
 
 /**
- * 等待初始化停止
+ * 等待初始化停止。
  * 这个函数会一直等待，直到初始化过程结束。
- * @returns {Promise<void>} 当初始化停止时解决的 Promise
+ * @returns {Promise<void>} 当初始化停止时解决的 Promise。
  */
 async function waitForInitializationToStop(): Promise<void> {
 	while (isInitializing) {
@@ -118,7 +145,7 @@ async function waitForInitializationToStop(): Promise<void> {
 }
 
 /**
- * 初始化解析器
+ * 初始化解析器。
  * 这个函数负责初始化 Angular 解析器。它会找到所有的 HTML 和 JS 文件，
  * 并将它们传递给解析器进行处理。
  */
@@ -136,9 +163,9 @@ async function initializeParser() {
 	cancelTokenSource = new vscode.CancellationTokenSource();
 
 	try {
-		const config = vscode.workspace.getConfiguration('angularDefinitionProvider');
-		const excludePatterns = config.get<string[]>('excludePatterns', AngularParser.getDefaultExcludePatterns());
-		const fileUris = await vscode.workspace.findFiles('**/*.{html,js}', `{${excludePatterns.join(',')}}`, undefined, cancelTokenSource.token);
+		const config = vscode.workspace.getConfiguration('angularHelper');
+		const ignorePatterns = config.get<string[]>('ignorePatterns') || [];
+		const fileUris = await vscode.workspace.findFiles('**/*.{html,js}', `{${ignorePatterns.join(',')}}`, undefined, cancelTokenSource.token);
 		
 		log(`开始初始化解析器，共找到 ${fileUris.length} 个文件`);
 
@@ -162,7 +189,7 @@ async function initializeParser() {
 }
 
 /**
- * 停用扩展
+ * 停用扩展。
  * 这个函数在扩展被停用时被调用。它会清理所有的资源。
  */
 export function deactivate() {
@@ -178,9 +205,9 @@ export function deactivate() {
 }
 
 /**
- * 记录日志
+ * 记录日志。
  * 这个函数用于记录普通日志信息。
- * @param {string} message - 要记录的日志消息
+ * @param {string} message - 要记录的日志消息。
  */
 export function log(message: string) {
 	if (vscode.workspace.getConfiguration('angularHelper').get<boolean>('enableLogging', true)) {
@@ -193,15 +220,14 @@ export function log(message: string) {
 }
 
 /**
- * 记录错误日志
+ * 记录错误日志。
  * 这个函数用于记录错误日志信息。
- * @param {string} message - 错误消息
- * @param {unknown} error - 错误对象
+ * @param {string} message - 错误消息。
+ * @param {unknown} error - 错误对象。
  */
 export function logError(message: string, error: unknown): void {
 	if (vscode.workspace.getConfiguration('angularHelper').get<boolean>('enableLogging', true)) {
 		const errorMessage = error instanceof Error ? error.stack || error.message : String(error);
-		// 添加空值检查
 		if (outputChannel) {
 			outputChannel.appendLine(`[${new Date().toLocaleString()}] ERROR: ${message}\n${errorMessage}`);	
 		} else {
@@ -210,7 +236,11 @@ export function logError(message: string, error: unknown): void {
 	}
 }
 
-// 添加这个新函数
+/**
+ * 设置输出通道。
+ * 这个函数用于设置扩展的输出通道。
+ * @param {vscode.OutputChannel} channel - 要设置的输出通道。
+ */
 export function setOutputChannel(channel: vscode.OutputChannel) {
 	outputChannel = channel;
 }

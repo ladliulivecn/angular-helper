@@ -70,14 +70,30 @@
           },
           "description": "根目录别名映射。键是别名，值是相对于工作区根目录的路径。"
         },
-        "angularHelper.ignoreScriptPatterns": {
+        "angularHelper.ignorePatterns": {
           "type": "array",
           "default": [
             "*.min.js",
             "http://*",
-            "https://*"
+            "https://*",
+            "//cdn.*",
+            ".git/**",
+            ".history/**",
+            ".idea/**",
+            ".vscode/**",
+            "doc/**"
           ],
-          "description": "要忽略的脚本文件模式。支持通配符 *。"
+          "description": "要忽略的文件、文件夹和脚本模式"
+        },
+        "angularHelper.resolvedPathCacheSize": {
+          "type": "number",
+          "default": 1000,
+          "description": "已解析路径的缓存大小。增加此值可以提高性能，但会占用更多内存。"
+        },
+        "angularHelper.resolvedPathCacheTTL": {
+          "type": "number",
+          "default": 3600000,
+          "description": "已解析路径的缓存生存时间（毫秒）。默认为1小时。"
         }
       }
     },

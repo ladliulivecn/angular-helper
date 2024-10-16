@@ -57,7 +57,9 @@ suite('Angular Helper Extension Test Suite', () => {
         const htmlDocument = await vscode.workspace.openTextDocument(htmlUri);
         const jsDocument = await vscode.workspace.openTextDocument(jsUri);
 
-        const functionsToTest = ['anotherFunction', 'showQrcode', 'hideQrcode'];
+        const functionsToTest = ['selectCost', 'showQrcode', 'GotoLearder','GotoSign'
+            ,'togglePage','GotoField'
+        ];
 
         for (const func of functionsToTest) {
             // 在 HTML 中查找函数引用
@@ -102,7 +104,7 @@ suite('Angular Helper Extension Test Suite', () => {
         const htmlDocument = await vscode.workspace.openTextDocument(htmlUri);
         const jsDocument = await vscode.workspace.openTextDocument(jsUri);
 
-        const variablesToTest = ['items', 'item'];
+        const variablesToTest = ['teacherList', 'teacher','act.costdetail','detail','act'];
 
         for (const variable of variablesToTest) {
             // 在 HTML 中查找变量引用
@@ -154,7 +156,9 @@ suite('Angular Helper Extension Test Suite', () => {
         const htmlDocument = await vscode.workspace.openTextDocument(htmlUri);
         const jsDocument = await vscode.workspace.openTextDocument(jsUri);
 
-        const variablesToTest = ['scopeVariable', 'anotherScopeVariable'];
+        const variablesToTest = ['showback', 'rootPath','hideSchool','hideCost','disableSign'
+            ,'mulChoose','act'
+        ];
 
         for (const variable of variablesToTest) {
             // 在 HTML 中查找变量引用
