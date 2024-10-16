@@ -1,0 +1,1354 @@
+<!doctype html>
+<html class="no-js" ng-app="actInfoApp" ng-controller="actInfoCtrl" ng-cloak>
+<!-- <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0;" name="viewport" /> -->
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0,user-scalable=no"/>
+
+
+<style>
+    /* 公共样式 beigin lxq-2019-1-28*/
+    .flex {
+        display: flex;
+    }
+
+    /* 公共样式 over*/
+    .cover, .cover2 {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        background: #000;
+        opacity: 0.5;
+        display: none;
+        z-index: 9999;
+    }
+
+    .FX_weixin, .FX_weixin2 {
+        display: none;
+        position: fixed;
+        top: 50%;
+        margin-top: -230px;
+        left: 50%;
+        margin-left: -215px;
+        width: 430px;
+        height: 460px;
+        background: #fff;
+        border: 1px solid #bbb;
+        border-radius: 5px;
+        box-shadow: 0px 4px 34px 0px #bebebe;
+        text-align: center;
+        z-index: 9999;
+    }
+
+    .close, .close2 {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        font-size: 14px;
+        cursor: pointer;
+    }
+
+    .modal_header {
+        height: 52px;
+        font-size: 16px;
+        color: #333;
+        background: #f4f4f4;
+        line-height: 52px;
+        border-radius: 5px 5px 0 0;
+        text-align: center;
+    }
+
+    .modal_footer {
+        padding: 0 1em;
+        margin: 0;
+        font-size: 16px;
+        text-align: center;
+    }
+
+    #code, #code2 {
+        margin: 48px auto;
+    }
+
+    .Cwx {
+        background: url(__ROOT__/activity/images/weixin.png) no-repeat center left;
+        padding-left: 20px;
+    }
+
+    .more {
+        background: url(__ROOT__/activity/images/more.png) no-repeat center left;
+        padding-left: 20px;
+    }
+
+    .actCostTab {
+        text-align: center;
+    }
+
+    /*承诺书区域*/
+
+    .procover {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        background: rgba(0, 0, 0, 0.3);
+        z-index: 1021;
+        display: none;
+    }
+
+    .procontent {
+        width: 30rem;
+        height: 24rem;
+        background: #fff;
+        position: absolute;
+        top: 50%;
+        margin-top: -12rem;
+        padding: 2rem;
+        border-radius: 1rem;
+        left: 50%;
+        margin-left: -15rem;
+    }
+    .procontent .title {
+        text-align: center;
+        font-weight: 500;
+        text-indent: 0;
+        font-size: 2rem;
+    }
+
+    .procontent .agree {
+        width: 8rem;
+        height: 3rem;
+        background: #61b72b;
+        color: #fff;
+        border: 1px solid #61b72b;
+        border-radius: 5px;
+    }
+
+    .procontent .text {
+        padding: 1rem 0 2rem;
+        height: 14rem;
+        overflow: auto;
+    }
+
+    .procontent .btnbox {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .conderr_url{
+        cursor: pointer;
+        color: blue;
+        font-size: 1.4rem;
+    }
+    .conderr_nourl{
+        color: black;
+        font-size: 1.4rem;
+    }
+    .ewmClose {
+        width: 16px;
+        margin-top: -8px;
+    }
+
+    .actFreeTab {
+        padding: 0 .1em;
+        font-size: 1em;
+        height: auto !important;
+        min-height: 40px;
+        border: 2px solid #ffb401;
+        color: #ffb401;
+        background-color: #ffecdc;
+        line-height: auto !important;
+    }
+
+    .icon.icon-left::before {
+        content: '';
+        background: url(https://webcdn.kaisaile.org/weibiaoti--.png) no-repeat left center;
+        padding-left: 13px;
+        background-size: 20px;
+    }
+
+    table.imagetable {
+        font-size: 11pt;
+        width: 100%;
+    }
+
+    table.imagetable tr th {
+        background: #f2f2f2;
+        font-weight: 500;
+        white-space: nowrap;
+    }
+
+    table.imagetable td {
+        border-width: 1px !important;
+        padding: 8px !important;
+        border-style: solid !important;
+        border-color: #999999 !important;
+        text-align: center !important;
+    }
+
+    table.imagetable th {
+        border-width: 1px !important;
+        padding: 8px !important;
+        border-style: solid !important;
+        border-color: #999999 !important;
+        text-align: center !important;
+    }
+    .btnSure {
+        position: absolute;
+        bottom: 0.2em;
+        left: 1rem;
+        right: 1rem;
+        background: #61b72b;
+        text-align: center;
+        height: 4rem;
+        line-height: 4rem;
+        color: #fff;
+        border-radius: 5px;
+    }
+
+    .SignCoverCon {
+        overflow: scroll;
+        background: #fff;
+        margin-top: 2rem;
+    }
+
+    .grouplist {
+        line-height: 4rem;
+        text-align: center;
+        border-radius: 2em;
+        background: rgba(245, 245, 245, 1);
+        border: 1px solid rgba(247, 247, 247, 1);
+        margin-bottom: .3em;
+        color: rgba(61, 61, 61, 1);
+        font-size: 0.9em;
+        overflow: hidden;
+        position: relative;
+    }
+
+    .grouplist.add {
+        background: rgba(255, 249, 235, 1);
+        border: 1px solid rgba(255, 204, 85, 1);
+    }
+
+    .actcolor {
+        display: block;
+    }
+    /*模态弹窗*/
+
+    .confirm_ul {
+        list-style: none;
+        margin: 0px;
+        padding: 0px;
+        width: 70%;
+        margin: auto;
+        margin-top: 40%;
+    }
+
+    .confirm_title {
+        background: #F2F2F2;
+        text-align: left;
+        padding-left: 20px;
+        line-height: 60px;
+        border: 1px solid #999;
+    }
+
+    .confirm_content {
+        background: #fff;
+        text-align: left;
+        min-height: 10vh;
+        max-height: 40vh;
+        line-height: 20px;
+        box-sizing: border-box;
+        padding: 28px 18px;
+        border-top-right-radius: 4px;
+        border-top-left-radius: 4px;
+        overflow: auto;
+    }
+
+    .confirm_btn-wrap {
+        background: #fff;
+        height: 30px;
+        line-height: 18px;
+        text-align: right;
+        border-bottom-right-radius: 4px;
+        border-bottom-left-radius: 4px;
+    }
+
+    .confirm_btn {
+        cursor: pointer;
+        color: #2bd00f;
+        margin-right: 35px;
+    }
+
+    .confirm_btn-wrap>a:nth-child(1) {
+        color: #9c9898;
+    }
+</style>
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="description" content="">
+    <meta name="keywords" content="">
+    <!-- <meta name="viewport" content="width=device-width, initial-scale=1"> -->
+    <title ng-bind="act.title"></title>
+    <!-- Set render engine for 360 browser -->
+    <meta name="renderer" content="webkit">
+    <!-- No Baidu Siteapp-->
+    <meta http-equiv="Cache-Control" content="no-siteapp"/>
+
+    <!-- Add to homescreen for Chrome on Android -->
+    <meta name="mobile-web-app-capable" content="yes">
+
+    <!-- Add to homescreen for Safari on iOS -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="Amaze UI"/>
+
+    <!-- Tile icon for Win8 (144x144 + tile color) -->
+    <meta name="msapplication-TileImage" content="__ROOT__/activity/images/app-icon72x72@2x.png">
+    <meta name="msapplication-TileColor" content="#0e90d2">
+    <!-- SEO: If your mobile URL is different from the desktop URL, add a canonical link to the desktop page https://developers.google.com/webmasters/smartphone-sites/feature-phones -->
+    <!--
+  <link rel="canonical" href="http://www.example.com/">
+  -->
+    <link rel="stylesheet" href="https://scdn.kaisaile.org/activity/css/amazeui.min.css%3F1.0.1">
+    <link rel="stylesheet" href="__ROOT__/activity/css/activity.css">
+    <link rel="stylesheet" href="https://res.wx.qq.com/open/libs/weui/1.0.2/weui.min.css"/>
+<!--    <include file="Template/Public/vconsole" />-->
+</head>
+<style>
+    .noinfo {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        background: #fff;
+    }
+
+    .noinfo-content {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        margin-top: -13rem;
+        width: 100%;
+        height: 26rem;
+        margin-left: -50%;
+        text-align: center;
+    }
+
+    .noinfo-content img {
+        width: 17rem;
+        margin-bottom: 1rem;
+    }
+
+    .noinfo-content .hint {
+        color: #8e8e93;
+        font-size: 1.4rem;
+        text-align: center;
+    }
+
+    .vip {
+        background: transparent url(https://webcdn.kaisaile.org/huanghg.png) no-repeat 1rem center;
+        background-size: 1.8rem;
+    }
+
+    .checkvip:before {
+        content: '';
+        z-index: 10;
+        position: absolute;
+        width: 3.6rem;
+        height: 40px;
+        left: 0.4rem;
+        top: -2px;
+        background: transparent url(https://webcdn.kaisaile.org/jinhg.png) no-repeat 0.5rem center;
+        background-size: 1.8rem;
+    }
+
+    .checkvip:after {
+        content: '';
+        position: absolute;
+        width: 3.6rem;
+        height: 40px;
+        left: -0.2rem;
+        top: -2px;
+        background: -webkit-linear-gradient(left, #ffe4ae, #e08f1b); /* Safari 5.1 - 6 */
+        background: -o-linear-gradient(right, #ffe4ae, #e08f1b); /* Opera 11.1 - 12*/
+        background: -moz-linear-gradient(right, #ffe4ae, #e08f1b); /* Firefox 3.6 - 15*/
+        background: linear-gradient(to right, #ffe4ae, #e08f1b); /* 标准的语法 */
+    }
+
+    .checkvip {
+        position: relative;
+    }
+
+    .activityMain, .noinfo {
+        display: none;
+    }
+
+    /* 报名弹窗 */
+    .showSignCover {
+        /* height: 50rem; */
+        position: fixed;
+        top: 10rem;
+        left: 1rem;
+        right: 1rem;
+        bottom: 0;
+        z-index: 9999;
+        background: #fff;
+        padding: 2rem;
+        display: none;
+        border-radius: 1rem 1rem 0 0;
+    }
+
+    .SignCover-group {
+        position: absolute;
+        top: 0;
+        left: 2rem;
+        right: 0;
+        margin: 0;
+        height: 4rem;
+        background: #fff;
+        line-height: 4rem;
+        border-radius: 1rem 1rem 0 0;
+        z-index: 2;
+    }
+
+    .sameh6 span {
+        height: 4rem;
+        font-size: .8em;
+        font-family: Lantinghei-SC-Extralight;
+        font-weight: 200;
+        color: rgba(128, 128, 128, 1);
+        line-height: 4rem;
+        position: relative;
+        top: -1px;
+        left: 5px;
+    }
+
+    .actCostCover {
+        position: absolute;
+        top: 4rem;
+        left: 2rem;
+        right: 2rem;
+        background: #61b72b;
+        height: 5rem;
+        line-height: 4rem;
+        z-index: 2;
+        padding-top: 1rem;
+    }
+
+    .actCostCover span {
+        color: #fff;
+    }
+
+    .sametysle {
+        background: rgba(245, 245, 245, 1);
+        border: 4px solid rgba(247, 247, 247, 1);
+        border-radius: 33px;
+        padding: .2em 1em;
+        color: #808080;
+        font-size: .88em;
+        border-radius: 3em;
+        margin: 0 0.5em 0.5em 0;
+        white-space: nowrap;
+        display: inline-block;
+    }
+
+    .listbox .sametysle:first-child {
+        margin-left: 0;
+    }
+
+    .listbox {
+        padding: 1rem 2rem;
+        font-size: .88em;
+    }
+
+    .sameh6 {
+        color: #282828;
+        font-size: 0.9em;
+        line-height: 4rem;
+        height: 4rem;
+    }
+
+    .grouplist .vipbg {
+        background: url(https://webcdn.kaisaile.org/huanghg.png) no-repeat 1.4em center;
+        background-size: 1.4em;
+        display: block;
+        height: 4rem;
+        float: left;
+        width: 6rem;
+        position: absolute;
+        top: 0;
+        left: 0;
+    }
+
+    .grouplist.add .vipbg {
+        background: #FFCC55 url(https://webcdn.kaisaile.org/jinhg.png) no-repeat center center;
+        background-size: 2rem;
+    }
+
+    .namestyle {
+        white-space: nowrap;
+        font-size: 1.5rem;
+        padding-right: 5px;
+    }
+
+    .qldj {
+        text-align: left;
+        white-space: nowrap;
+        font-size: 1.5rem;
+        padding-right: 5px;
+    }
+
+    .costdetailZb {
+        text-align: right;
+        font-size: 1.5rem;
+        padding-right: 5px;
+        /* width: 7rem; */
+        height: 2rem;
+        line-height: 2rem;
+        text-overflow: ellipsis;
+        overflow: hidden;
+        white-space: nowrap;
+    }
+
+    .actinfo {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+
+    .iconsbox, .actadress {
+        display: none;
+    }
+
+    .widthSet {
+        display: block;
+    }
+
+    .sponsorZBF {
+        display: none;
+    }
+
+    .YBMact_sign {
+        display: block !important;
+    }
+
+    .bar.bar-nav {
+        margin-bottom: 1rem;
+    }
+
+    .bannerbox {
+        float: left;
+    }
+
+    .am-list > li.fzrbox {
+        display: none;
+    }
+
+    @media screen and (min-width: 320px) and (max-width: 768px) {
+        /* .bar.bar-nav{
+            display: none;
+        } */
+        .am-list > li.fzrbox {
+            display: block;
+        }
+
+        .actDescription .title {
+            text-align: left;
+            font-size: .9em;
+            text-indent: 0;
+            font-weight: 500;
+        }
+
+        .actDescription .titlespan {
+            font-size: 1.2em !important;
+            font-weight: 500 !important;
+            display: none;
+        }
+
+        .bannerbox {
+            float: none;
+        }
+
+        .am-dropdown-content:before, .am-dropdown-content:after {
+            display: none;
+        }
+
+        .am-dropdown-content {
+            border: none !important;
+            padding: 0;
+        }
+
+        .bar.bar-nav {
+            margin-bottom: 0;
+        }
+
+        .actinfo {
+            padding-top: 1rem;
+            background: #fff;
+            position: relative;
+            height: auto;
+            border-radius: .8rem;
+            width: 95%;
+            margin: 0 auto;
+            padding-bottom: 0.5em;
+        }
+
+        .addpaddingstyle {
+            padding: 0;
+        }
+
+        .iconsbox {
+            justify-content: space-between;
+            display: flex !important;
+            align-items: center;
+            padding-top: 1rem;
+        }
+
+        .actadress {
+            display: block;
+            white-space: nowrap;
+        }
+
+        .widthSet, .sponsorZBFicon {
+            display: none;
+        }
+
+        .sponsorZBF {
+            display: block;
+            white-space: nowrap;
+        }
+
+        .sponsorZBFt {
+            display: none;
+        }
+
+        .YBMact_sign {
+            display: none !important;
+        }
+
+        .am-list > li {
+            border: none;
+        }
+
+        .am-list-static > li {
+            padding: 0.2rem;
+        }
+    }
+
+
+    .llliang {
+        width: 1.2em;
+        margin-right: .4em;
+    }
+
+    .renyuan {
+        width: 1.3em;
+        margin-right: .4em;
+    }
+
+    .scang {
+        width: 1em;
+    }
+
+    .relevant {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .relevant {
+        color: #3e3e3e;
+        background: #d0d0d0;
+        height: 4rem;
+        line-height: 4rem;
+    }
+
+    .relevant i {
+        width: 2rem;
+        border-top: 2px solid #3e3e3e;
+        margin: 0 1rem;
+    }
+
+    .addbox {
+        display: flex;
+
+    }
+
+    .imgbox {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0.5;
+    }
+
+    .imginfo {
+        flex: 1;
+    }
+
+
+</style>
+
+<body ng-cloak>
+
+<!-- <header class="bar bar-nav" style="background: #62B72B;color: #fff;z-index: 9999;line-height: 44px;padding-left: 11px;">
+    <a style="color:#fff;" class="button button-link button-nav pull-left back" href="javascript:window.history.back();" ng-if="showback">
+        <span class="icon icon-left"></span>
+        返回
+    </a>
+</header> -->
+<button id="openid" value="{$wxOpenId}" hidden="true"></button>
+<button id="rootpath" value="" hidden="true"></button>
+<!-- ng-show="resperr == 0 " -->
+<div class="activityMain">
+    <header class="bar bar-nav"
+            style="background: #62B72B;color: #fff;z-index: 9999;line-height: 44px;padding-left: 11px;">
+        <a style="color:#fff;" class="button button-link button-nav pull-left back"
+           href="javascript:window.history.back();" ng-if="showback">
+            <span class="icon icon-left"></span>
+            返回
+        </a>
+    </header>
+    <div class="activityBody am-g am-g-fixed am-container  addpaddingstyle" style="padding:0;">
+        <div class="am-u-sm-12 am-u-md-12 am-u-lg-6 addpaddingstyle bannerbox" style="padding:0;">
+            <div class="am am-figure" style="max-height: 368px;overflow: hidden;">
+                <img class="am-img-responsive" width="100%"
+                     ng-src="{{act.poster|| 'https://webcdn.kaisaile.org/morentu3.jpg'}}" alt=""/>
+                <!-- <img class="am-img-responsive" width="100%" src="" alt="" /> -->
+            </div>
+        </div>
+        <div class="actinfo">
+            <div class="am-text-xl am-hide-lg-only" style="font-size: 14pt;font-weight: 600;" ng-bind="act.title"></div>
+            <!-- <div class="am-cf  am-hide-lg-only">
+                <small class="am-link-muted am-text-default am-fl" ng-bind="act.sponsor"></small>
+                <a class="am-btn mywrite mybackgrstateTopound am-btn-sm am-fr" ng-href="{{TeacherUrl}}" target="_blank" ng-bind="act.tname" ng-if="showTeachUrl"></a>
+
+            </div> -->
+
+            <div style="padding: 1rem 0 0;" class="am-u-sm-12 am-u-md-12 am-u-lg-6 am-hide-lg-only  clear iconsbox"
+                 ng-if="act.id != 280">
+                <!-- <small class="am-link-muted am-text-default ">浏览：{{pvcount || '0'}}</small> -->
+                <!-- 参赛人员 -->
+                <span ng-if="act.simple_desc" style="color:#666;display: inline-block;">{{act.simple_desc}}</span>
+                <div ng-style="{'display': 'inline-flex','width': '10rem'}">
+                    <small class="am-link-muted am-text-default ng-hide "
+                           style="display:flex;align-items: center;margin-right: 1.8em;"
+                           ng-show="act.showtotalsign == 1 ">
+                        <img src="https://webcdn.kaisaile.org/renyuan.png" alt="" class="renyuan">
+                        <span style="color:#000">{{act.act_sign}}</span>
+                        <!-- <span style="color:#b4b4b4;">{{act.act_total > 0 ? (act.act_total-act.act_sign) : '无限'}}</span> -act.act_sign-->
+                        <span style="color:#b4b4b4;" ng-if="act.act_total > 0"><span style="margin:0 1px">/</span><span
+                                id="actnumber">{{(act.act_total)}}</span></span>
+                    </small>
+                    <!-- 浏览量 -->
+                    <small class="am-link-muted am-text-default "
+                           style="display:flex;align-items: center;margin-right: 1.8em;">
+                        <img src="https://webcdn.kaisaile.org/llliang.png" alt="" class="llliang">
+                        <span style="color:#b4b4b4">{{pvcount || '0'}}</span>
+
+                    </small>
+                </div>
+                <!-- 收藏 -->
+                <!-- <small class="am-link-muted am-text-default" style="display:flex;align-items: center;margin-right: 1.8em;">
+                    <img src="https://webcdn.kaisaile.org/scang.png" alt="" class="scang">
+                </small> -->
+            </div>
+            <div class="am-margin-top am-u-sm-12 am-u-md-12 am-u-lg-6 addpaddingstyle">
+                <div class="am-text-xl am-show-lg-only" style="line-height: 2.4rem;" ng-bind="act.title"></div>
+                <div class="am-show-lg-only" style="font-size: 14px;line-height: 1.4rem;padding: 0.5rem 0;color:#555;"
+                     ng-bind="act.simple_desc"></div>
+                <ul class="am-list am-list-static">
+                    <!--<li><i class="am-icon-clock-o am-icon-fw actcolor"></i>{{act.sign_starttime}} ~ {{act.sign_endtime}}</li>-->
+
+                    <li>
+                        <div ng-hide="hideSchool || act.ext_catgory == 4 || act.id == 280" class="flex">
+                            <div ng-hide="act.ext_catgory != 0" class="am-text-nowrap actcolor">活动时间：</div>
+                            <div ng-hide="act.ext_catgory == 0" class="am-text-nowrap actcolor">比赛时间：</div>
+                            <div style="padding-left:0.4em">{{act.act_starttime | timefil}} 至
+                                {{act.act_endtime | timefil}}
+                            </div>
+                        </div>
+                    </li>
+                    <li style="display:flex!important;">
+                        <!-- <li class="am-show-lg-only"> -->
+                        <i class="actcolor am-icon-calendar am-icon-fw sponsorZBFicon"></i>
+                        <span class="actcolor sponsorZBF" style="white-space: nowrap;">报名截止：</span>
+                        <span class="sponsorZBFt" style="padding-left: 0.4em;">
+                                报名截止：
+                            </span>
+                        <span class="am-text-lg " ng-bind="act.sign_endtime | timefil"
+                              style="font-size: 1.6rem;padding-left: 0.4em;"></span>
+                        <!-- <span ng-if="act.organizer">&nbsp;&nbsp;&nbsp;&nbsp;承办方：<span class="actcolor am-text-lg" ng-bind="act.organizer"></span></span> -->
+                    </li>
+                    <li>
+                        <div ng-if="act.ext_catgory == 1 || act.ext_catgory == 2 || act.ext_catgory == 11 || act.ext_catgory == 6|| act.ext_catgory == 7"
+                             class="flex">
+                            <div class="am-text-nowrap actcolor">形&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;式&nbsp;：</div>
+                            <div style="padding-left:0.4em">{{act.ext_catgory | modality}}</div>
+                        </div>
+                    </li>
+                    <li class="" ng-hide="act.ext_catgory == 4 || act.id == 280 ||act.act_addr==''"
+                        style="display:flex;">
+                        <i class="am-icon-map-marker am-icon-fw actcolor widthSet"></i>
+                        <div ng-hide="act.ext_catgory != 0" class="am-text-nowrap actcolor">活动地点：</div>
+                        <div ng-hide="act.ext_catgory == 0" class="am-text-nowrap actcolor">比赛地点：</div>
+                        <div style="padding-left: .9em;">{{act.act_addr}}</div>
+                    </li>
+                    <li class="fzrbox" ng-show="act.director">
+                        <div class="flex">
+                            <div class="am-text-nowrap actcolor">
+                                <span class=" am-hide-lg-only">负 责 人 ：</span>
+                            </div>
+                            <div ng-show="act.director != undefined">
+                                <div class="am-dropdown  am-dropdown-up am-hide-lg-only" style="text-indent: 0.4em;">
+                                    <button class="am-btn am-btn-warning am-dropdown-toggle am-btn-xs">
+                                        {{act.director}}
+                                    </button>
+                                    <!-- <div class="am-dropdown-content"> -->
+                                    <span>
+                                                    {{act.director_tel}}
+                                                </span>
+                                    <!-- </div> -->
+                                </div>
+                            </div>
+                        </div>
+                    </li>
+                    <li ng-if="act.showtotalsign == 1" class="YBMact_sign"><i
+                            class="am-icon-users am-icon-fw actcolor"></i>
+                        已报名{{act.act_sign}}人，剩余{{act.act_total > 0 ? (act.act_total - act.act_sign) : '无限'}}人名额
+                    </li>
+                    <li style="display:flex;" ng-hide="act.sponsor==''">
+                        <!-- <li class="am-show-lg-only"> -->
+                        <i class="actcolor am-icon-university am-icon-fw sponsorZBFicon"></i>
+                        <span ng-if="isLH" class="actcolor sponsorZBF" style="white-space: nowrap;">本周轮值东道主：</span>
+                        <span ng-if="!isLH" class="actcolor sponsorZBF" style="white-space: nowrap;">主 办 方 ：</span>
+                        <span class="am-text-lg " ng-bind="act.sponsor"
+                              style="font-size: 1.6rem;padding-left: 0.4em;"></span>
+                        <!-- <span ng-if="act.organizer">&nbsp;&nbsp;&nbsp;&nbsp;承办方：<span class="actcolor am-text-lg" ng-bind="act.organizer"></span></span> -->
+                    </li>
+
+                    <li ng-if="act.organizer" style="display:flex!important;">
+                        <span ng-if="act.organizer" class="actcolor" style="white-space: nowrap;">承 办 方 ：</span>
+                        <span class="am-text-lg" ng-bind="act.organizer"
+                              style="color:#000;padding-left: 0.4em;font-size: 1.6rem;"></span>
+                    </li>
+                    <li class="am-show-lg-only" ng-show="showTeacherList">
+                        <i class="am-icon-edit am-icon-fw actcolor"></i>
+                        <span>
+                                主讲人：<span ng-repeat="teacher in teacherList">
+                                <a class="am-btn am-inline-block am-btn-sm" ng-href="{{teacher.url}}" target="_blank"
+                                   ng-bind="teacher.name" style="background: #ff4920; color: #fff; padding: 5px;"></a>
+                            </span>
+
+                            </span>
+
+                    </li>
+                    <li class="am-show-lg-only" ng-show="showTeachUrl || act.director ">
+                        <i class="am-icon-user am-icon-fw actcolor"></i>
+                        <span ng-if="showTeachUrl">
+                                主讲人：
+                                <a class="am-btn am-inline-block am-btn-sm" ng-href="{{TeacherUrl}}" target="_blank"
+                                   ng-bind="act.tname" style="background: #ff4920; color: #fff; padding: 5px;"></a>
+                            </span>
+                        <span ng-show="act.director">
+                                活动负责人：
+                            <!-- <div class="am-dropdown  am-dropdown-up" data-am-dropdown> -->
+                                    <button class="am-btn am-btn-warning am-btn-xs">{{act.director}}
+                                    </button>
+                            <!-- <div class="am-dropdown-content"> -->
+                                        <span>
+                                            {{act.director_tel}}
+                                        </span>
+                            <!-- </div> -->
+                            <!-- </div> -->
+                            </span>
+                    </li>
+                    <!-- 组别 -->
+                    <li class="am-hide-lg-only" ng-if="act.cost != 0"
+                        ng-hide="hideSchool || hideCost || act.ext_catgory == 4 || act.id == 280">
+                        <!-- <i class="am-icon-money am-icon-fw actcolor"></i> -->
+                        <div class="actcolor">组&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;别&nbsp;：</div>
+                        <div id="doc-dropdown-justify-js">
+                            <div class="am-dropdown  am-active" id="doc-dropdown-js" style="display: block;">
+                                <!-- <button class="am-btn am-btn-warning am-dropdown-toggle" style="display: block;">{{costText}} <span
+                                    class="am-icon-caret-down"></span></button> -->
+                                <div class="am-dropdown-content" style="position: relative;width: 100%;">
+                                    <!--普通活动允许选择多个票种的逻辑-->
+                                    <span ng-show="act.ext_catgory == 0"
+                                          ng-class="{'checkvip':(isChooseCost($index) &&costNumstyle)&&detail.vipflag
+                                            && detail.ticketPrice !== '' && detail.ticketPrice !== undefined && detail.ticketPrice > 0
+                                            ,'vip':(!isChooseCost($index)||!costNumstyle)&&detail.vipflag
+                                            && detail.ticketPrice !== '' && detail.ticketPrice !== undefined && detail.ticketPrice > 0
+                                            ,'actFreeTab':isChooseCost($index)&&costNumstyle
+                                            ,'actCostTab':!isChooseCost($index)||!costNumstyle
+                                            ,'actNoneTab':(detail.ticketNum-detail.ticketSale) <=0 && detail.ticketNum != '' && detail.ticketNum != -1}"
+                                          ng-if="act.cost != 0" ng-repeat="detail in act.costdetail"
+                                          ng-click="selectCost(this,detail)" style="padding: 0 .1em;font-size: 1em;">
+                                                <span style="padding: 0 1rem 0 3.4rem;display: flex;justify-content: space-between;line-height: 36px;white-space: nowrap;overflow: hidden;text-overflow: ellipsis;overflow: hidden;">
+                                                    {{detail.ticketName}} 
+                                                    <span ng-show="detail.ticketPrice !== '' && detail.ticketPrice !== undefined">{{detail.ticketPrice}}元</span>
+                                                <span ng-show="detail.ticketNum != -1">剩余{{detail.ticketNum - detail.ticketSale}}张</span>
+                                            </span>
+                                            </span>
+                                    <span ng-hide="act.ext_catgory == 0"
+                                          ng-class="{'checkvip':($index == costNum&&costNumstyle)&&detail.vipflag
+                                            && detail.ticketPrice !== '' && detail.ticketPrice !== undefined && detail.ticketPrice > 0
+                                            ,'vip':($index != costNum||!costNumstyle)&&detail.vipflag
+                                            && detail.ticketPrice !== '' && detail.ticketPrice !== undefined && detail.ticketPrice > 0
+                                            ,'actFreeTab':$index == costNum&&costNumstyle
+                                            ,'actCostTab':$index != costNum||!costNumstyle
+                                            ,'actNoneTab':(detail.ticketNum-detail.ticketSale) <=0 && detail.ticketNum != '' && detail.ticketNum != -1}"
+                                          ng-if="act.cost != 0" ng-repeat="detail in act.costdetail"
+                                          ng-click="selectCost(this,detail)" style="padding: 0 .1em;font-size: 1em;">
+                                                <span style="padding: 0 1rem 0 3.4rem;display: flex;justify-content: space-between;line-height: 36px;white-space: nowrap;overflow: hidden;text-overflow: ellipsis;overflow: hidden;">
+                                                    {{detail.ticketName}}
+                                                    <span ng-show="detail.ticketPrice !== '' && detail.ticketPrice !== undefined">{{detail.ticketPrice}}元</span>
+                                                <span ng-show="detail.ticketNum != -1">剩余{{detail.ticketNum - detail.ticketSale}}张</span>
+                                            </span>
+                                            </span>
+                                </div>
+                            </div>
+                        </div>
+                    </li>
+                    <div class="am-show-lg-only" id='Buttons'>
+                        <div ng-style=""
+                             class="am-btn am-inline-block am-btn-sm am-padding-horizontal am-fl  am-show-lg-only  am-text-lg am-margin-top"
+                             ng-disabled="isdisabled" ng-show="signLearder"
+                             style="background: #fff;border:1px solid #61b72b;margin-right:5px;">
+                            <a href="javascript:;" ng-click="GotoLearder()" style="color:#fff;background: #fff">
+                                <span class="am-icon-sign-in" style="color: #000"></span>
+                                <span ng-bind="signLearder" style="color: #000"></span>
+                            </a>
+                        </div>
+                        <div ng-style="signStyle"
+                             class="am-btn am-inline-block am-btn-sm am-padding-horizontal am-fl  am-show-lg-only  am-text-lg am-margin-top"
+                             ng-disabled="isdisabled">
+                            <a href="javascript:;" ng-click="GotoSign()" style="color:#fff;">
+                                <span class="am-icon-sign-in"></span>
+                                <span ng-bind="signCall"></span>
+                            </a>
+                            <!-- <a href="javascript:;" ng-click="GotoSignSelect()" style="color:#fff;">
+                                <span class="am-icon-sign-in"></span>
+                                <span ng-bind="signCall"></span>
+                            </a> -->
+                        </div>
+                        <small ng-if="act.id != 280"
+                               class="am-link-muted am-text-sm  am-fl am-margin-top-lg am-margin-left-sm">{{pvcount ||
+                        '0'}}次浏览
+                        </small>
+                        <!--<div class="bdsharebuttonbox am-fr am-margin-top-lg "><a href="#" class="bds_more" data-cmd="more"></a><a href="#" class="bds_weixin" data-cmd="weixin" title="分享到微信"></a><a href="#" class="bds_qzone" data-cmd="qzone" title="分享到QQ空间"></a><a href="#" class="bds_tsina" data-cmd="tsina" title="分享到新浪微博"></a><a href="#" class="bds_tqq" data-cmd="tqq" title="分享到腾讯微博"></a><a href="#" class="bds_sqq" data-cmd="sqq" title="分享到QQ好友"></a></div>-->
+                        <!--<script>window._bd_share_config={"common":{"bdSnsKey":{},"bdText":"","bdMini":"2","bdMiniList":false,"bdPic":"","bdStyle":"1","bdSize":"16"},"share":{}};with(document)0[(getElementsByTagName('head')[0]||body).appendChild(createElement('script')).src='http://bdimg.share.baidu.com/static/api/js/share.js?v=89860593.js?cdnversion='+~(-new Date()/36e5)];</script>-->
+
+                        <!-- JiaThis Button BEGIN -->
+                        <div id="ckepop" class="am-link-muted am-text-sm  am-fl am-margin-top-lg am-margin-left-sm">
+                            <span class="jiathis_txt">分享到：</span>
+                            <a class="jiathis_button_weixin  Cwx">微信</a>
+                            <!-- <a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis more" target="_blank">更多
+                            </a> -->
+                            <!-- <a class="jiathis_counter_style"></a> -->
+                        </div>
+                        <!--   <script type="text/javascript" src="http://v3.jiathis.com/code/jia.js?uid=1" charset="utf-8"></script>  -->
+                        <!-- JiaThis Button END -->
+
+                    </div>
+                    <!-- 移动端收费 -->
+                    <li class="am-hide-lg-only" ng-if="act.cost == 0"
+                        ng-hide="hideSchool || hideCost || act.ext_catgory == 4 || act.id == 280">
+                        <i class="am-icon-money am-icon-fw actcolor"></i> {{act.freedisplay ? act.freedisplay : '免费'}}
+                    </li>
+
+
+                </ul>
+            </div>
+            <div ng-hide="isSummary" class="clear am-u-lg-9 addpaddingstyle">
+                <!-- lxq-2019-1-28 -->
+                <div class="am-table am-table-compact clear am-margin-top">
+                    <!-- 活动费用： -->
+                    <div class="am-show-lg-only flex" ng-hide="hideSchool || hideCost || act.id == 280">
+                        <div class="am-text-nowrap actcolor am-vertical-align" ng-hide="act.ext_catgory == 4">
+                            <span class="am-vertical-align-middle" ng-show="act.cost != undefined">活动费用：</span>
+                        </div>
+                        <div ng-hide="act.ext_catgory == 4">
+                            <div ng-show="act.ext_catgory == 0">
+                                <span class="actFreeTab" ng-if="act.cost == 0">{{act.freedisplay ? act.freedisplay : '免费'}}</span>
+                                <span ng-class="{'checkvip':($index == costNum&&costNumstyle)&&detail.vipflag && detail.ticketPrice !== '' && detail.ticketPrice !== undefined && detail.ticketPrice > 0
+                                        ,'vip':($index != costNum||!costNumstyle)&&detail.vipflag && detail.ticketPrice !== '' && detail.ticketPrice !== undefined && detail.ticketPrice > 0
+                                        ,'actFreeTab':isChooseCost($index)&&costNumstyle
+                                        ,'actCostTab':!isChooseCost($index)||!costNumstyle
+                                        ,'actNoneTab':(detail.ticketNum-detail.ticketSale) <=0 && detail.ticketNum != '' && detail.ticketNum != -1}"
+                                      ng-if="act.cost != 0" ng-repeat="detail in act.costdetail"
+                                      ng-click="selectCost(this,detail)" style="padding: 0 .1em 0 2.8rem;font-size: 1em;">
+                                            <span style="padding: 0 1rem 0 2.8rem;display:block;line-height: 36px;white-space: nowrap;text-overflow: ellipsis;overflow: hidden;">
+                                    {{detail.ticketName}}
+                                    <span ng-show="detail.ticketPrice !=='' && detail.ticketPrice !== undefined">{{detail.ticketPrice}}元</span>
+                                    <span ng-show="detail.ticketNum != -1">剩余{{detail.ticketNum - detail.ticketSale}}张</span>
+                                </span>
+                                </span>
+                            </div>
+                            <div ng-hide="act.ext_catgory == 0">
+                                <span class="actFreeTab" ng-if="act.cost == 0">{{act.freedisplay ? act.freedisplay : '免费'}}</span>
+                                <span ng-class="{'checkvip':($index == costNum&&costNumstyle)&&detail.vipflag && detail.ticketPrice !== '' && detail.ticketPrice !== undefined && detail.ticketPrice > 0
+                                        ,'vip':($index != costNum||!costNumstyle)&&detail.vipflag && detail.ticketPrice !== '' && detail.ticketPrice !== undefined && detail.ticketPrice > 0
+                                        ,'actFreeTab':$index == costNum&&costNumstyle
+                                        ,'actCostTab':$index != costNum||!costNumstyle,'actNoneTab':(detail.ticketNum-detail.ticketSale) <=0 && detail.ticketNum != '' && detail.ticketNum != -1}"
+                                      ng-if="act.cost != 0" ng-repeat="detail in act.costdetail"
+                                      ng-click="selectCost(this,detail)" style="padding: 0 .1em 0 2.8rem;font-size: 1em;">
+                                            <span style="padding: 0 1rem 0 2.8rem;display:block;line-height: 36px;white-space: nowrap;text-overflow: ellipsis;overflow: hidden;">
+                                    {{detail.ticketName}}
+                                    <span ng-show="detail.ticketPrice !=='' && detail.ticketPrice !== undefined">{{detail.ticketPrice}}元</span>
+                                    <span ng-show="detail.ticketNum != -1">剩余{{detail.ticketNum - detail.ticketSale}}张</span>
+                                </span>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 活动咨询 -->
+                    <div ng-hide="hideSchool" class="flex">
+                        <div class="am-text-nowrap actcolor" ng-show="act.tel != undefined">活动咨询：</div>
+                        <div ng-bind="act.tel"></div>
+                    </div>
+                    <!-- 活动分类 -->
+                    <div ng-hide="hideSchool || (!act.HdCategory && !act.HdShape)" class="flex">
+                        <div class="am-text-nowrap actcolor">活动分类：</div>
+                        <div>
+                            <span class="activeClass" ng-repeat="hdcatgory in act.HdCategory"
+                                  style="color:black">{{hdcatgory}}</span>
+                            <span ng-if="act.HdShape" class="activeClass" ng-bind="act.HdShape"></span>
+                        </div>
+                    </div>
+                    <!-- 活动标签 -->
+                    <div ng-hide="hideSchool || !act.ActTag || 0 == act.ActTag.length" class="flex">
+                        <div class="am-text-nowrap actcolor">活动标签：</div>
+                        <div>
+                            <span class="actTag" ng-repeat="actTag in act.ActTag"
+                                  style="min-width: auto;max-width: 100%;">{{actTag.keywords}}</span>
+                        </div>
+                    </div>
+
+                    <!-- 参赛团队 -->
+                    <div ng-if="act.ext_type == 1 || act.ext_type == 2">
+                        <div class="am-text-nowrap actcolor">参赛团队：</div>
+                        <div>
+
+                            <div ng-repeat="jginfo in act.SignJgList" style="margin-bottom:2rem;">
+                                <div ng-bind="jginfo.title" style="text-align: center;"></div>
+                                <div ng-repeat="signinfo in jginfo.SignData">
+                                    <table  border="1" cellspacing="0" cellpadding="0" class="imagetable">
+                                        <tr>
+                                            <th>组别名称</th>
+                                            <th>报名上限</th>
+                                            <th>报名人数</th>
+                                        </tr>
+                                        <tr >
+                                            <td ng-bind="signinfo.ticketname"></td>
+                                            <td ng-bind="signinfo.total_limit==-1?'不限':signinfo.total_limit"></td>
+                                            <td ng-bind="signinfo.curr_total"></td>
+                                        </tr>
+                                    </table>
+                                    <table  border="1" cellspacing="0" cellpadding="0" class="imagetable">
+                                        <tr ng-if="signinfo.memberlist">
+                                            <th>台次</th>
+                                            <th>姓名</th>
+                                            <th>性别</th>
+                                            <th>等级分</th>
+                                            <th>电话</th>
+                                        </tr>
+                                        <tr ng-repeat="memberinfo in signinfo.memberlist">
+                                            <td ng-bind="memberinfo.groupindex==9999?'':'第'+ memberinfo.groupindex +'台'"></td>
+                                            <td ng-bind="memberinfo.name"></td>
+                                            <td ng-bind="memberinfo.sex"></td>
+                                            <td ng-bind="memberinfo.elo"></td>
+                                            <td ng-bind="memberinfo.tel"></td>
+                                        </tr>
+                                    </table>
+                                </div>
+
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 详细描述 -->
+                    <div ng-hide="act.id == 280" class="">
+                        <div class="am-text-nowrap actcolor">详细描述：</div>
+                        <div></div>
+                    </div>
+
+                </div>
+
+                <div class="actDescription" ng-bind-html="act.description | to_trusted"></div>
+                <div ng-show="act.ext_catgory == 1">
+                    <a href="javascript:;">
+                        <img src="https://webcdn.kaisaile.org/xiaochengxutiyan.png" alt="" style="width: 100%;">
+                    </a>
+                </div>
+                <!-- <p class="am-text-lg am-margin-top-sm relevant" ng-hide="hideSchool || act.id == 280">
+                    <i class="line"></i>相关推荐<i class="line"></i></p> -->
+                <p class="am-text-lg am-margin-top-sm actcolor"
+                   ng-hide="hideSchool || act.id == 280 || !act.history['url']">
+                    相关推荐</p>
+                <div ng-show="act.history != undefined && act.history['url'] && !hideSchool &&  act.id != 280">
+                    <!-- <span class="am-text-nowrap actcolor">活动链接：</span> -->
+                    <!-- <a ng-href="{{act.history['url']}}">{{act.history['url'] || '暂无'}}</a> -->
+
+                    <ul class="">
+                        <li class="am-margin-top-sm">
+                            <!-- <div class="am-gallery-item">
+                                <img ng-src="{{act.history.img}}" alt="" class="am-img-responsive" />
+                            </div> -->
+                            <a class="am-gallery-item" ng-href="{{act.history['url']}}">
+                                <img ng-src="{{act.history.img}}" alt="" class="am-img-responsive"/>
+                            </a>
+                        </li>
+                    </ul>
+
+                </div>
+                <div ng-if="act.showsinglist == 1">
+                    <span class="am-text-nowrap actcolor">已报名人列表：</span>
+                    <ng-repeat ng-repeat="group in signList" ng-if="group.groupArr.length>0">
+                        <span class="am-text-nowrap actcolor">{{group.groupName}}</span>
+                        <table style="width: 100%">
+                            <tr ng-repeat="user in group.groupArr" class="col-xs-12" ng-if="user.paystate == 1">
+                                <!--<td ng-bind="user.tel"></td> ng-if="user.paystate == 1"-->
+                                <td class="col-xs-3">
+                                    <span ng-if="!user.url" ng-bind="user.name" class="default-a"></span>
+                                    <!-- <a target="_blank" ng-if="user.url" href="__ROOT__/index.php/ViewUserCenter/userPreview?token=&mpid={{user.url}}&mptype=2" ng-bind="user.name" class="link-a"></a> -->
+                                    <a target="_blank" ng-if="user.url"
+                                       href="__ROOT__/index.php/ViewUserCenter/userPreview?token=&mptype=2&mpid={{user.url}}&ispreview=1"
+                                       ng-bind="user.name" class="link-a namestyle"></a>
+                                    <!--user.pelo<a target="_blank" ng-href="/index.php/Education/preview.html?mpid={{user.url}}&mptype=2" ng-bind="user.name" ng-class="{true:'link-a',false:'default-a'}[user.url]"></a>-->
+                                </td>
+                                <td ng-bind="user.ulevellimit == '1' ? user.ulevel :user.pelo1"
+                                    style="text-align: left;white-space: nowrap;" class="qldj col-xs-4"
+                                    ng-hide="act.ext_catgory == 0"></td>
+                                <td style="text-align: left" class="col-xs-5">
+                                    <div ng-bind="user.createtime | timefil" class="costdetailZb"></div>
+                                </td>
+                            </tr>
+                        </table>
+                    </ng-repeat>
+                    <ul class="am-pagination " ng-show="showPage">
+                        <li><a href="javascript:;" ng-click="togglePage(0)" ng-hide="prev">&laquo;</a></li>
+                        <li><a href="javascript:;" ng-click="togglePage(-1)" ng-hide="prev">上一页</a></li>
+                        <li ng-repeat="page in pagelist">
+                            <a class="current-page" ng-bind="page+1" ng-click="togglePage(page+1)"></a>
+                        </li>
+                        <li><a href="javascript:;" ng-click="togglePage(-2)" ng-hide="next">下一页</a></li>
+                        <li><a href="javascript:;" ng-click="togglePage(-3)" ng-hide="next">&raquo;</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div ng-show="isSummary" class="clear am-u-lg-9">
+                <div>
+                    <p class="actcolor am-text-lg am-margin-top-sm">活动总结：</p>
+                </div>
+                <div class="actDescription" ng-bind-html="act.summary | to_trusted"></div>
+            </div>
+            <div ng-hide="isSummary" data-am-widget="navbar" class="am-navbar am-cf am-navbar-default am-hide-lg-only"
+                 id="" style="z-index:1020;">
+                <ul class="am-navbar-nav am-cf am-avg-sm-4" id='btnbox'
+                    style="background: none;padding: 0px;display: flex;">
+                    <!-- <li data-am-navbar-share style="background: #7ce066;">
+                <a href="###" class="">
+                        <span class="am-icon-share-square-o"></span>
+                    <span class="am-navbar-label">分享</span>
+                </a>
+                </li> -->
+                    <li ng-show="signField" style="background: #fff;border: 1px solid #61b72b;">
+                        <a href="javascript:;" class="" ng-click="GotoField()" style="color:#000;">
+                            <span class="am-icon-sign-in"></span>
+                            <span ng-bind="signField" class="am-navbar-label"></span>
+                        </a>
+                    </li>
+                    <li ng-show="signLearder" style="background: #fff;border: 1px solid #61b72b;" ng-disabled="isdisabled">
+                        <a href="javascript:;" class="" ng-click="GotoLearder()" style="color:#000;">
+                            <span class="am-icon-sign-in"></span>
+                            <span ng-bind="signLearder" class="am-navbar-label"></span>
+                        </a>
+                    </li>
+                    <li ng-style="signStyle" ng-disabled="isdisabled">
+                        <a href="javascript:;" class="mywrite" ng-click="GotoSign()">
+                            <span class="am-icon-sign-in"></span>
+                            <span class="am-navbar-label" ng-bind="signCall"></span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div data-am-widget="gotop" class="am-gotop am-gotop-fixed" style="z-index: 1020;">
+                <a href="#top" title="回到顶部">
+                    <span class="am-gotop-title">回到顶部</span>
+                    <i class="am-gotop-icon am-icon-chevron-up"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+    <div id="loadingToast" style="display:none;">
+        <div class="weui-mask_transparent"></div>
+        <div class="weui-toast">
+            <i class="weui-loading weui-icon_toast"></i>
+            <p class="weui-toast__content">数据加载中</p>
+        </div>
+    </div>
+</div>
+<!-- 点击微信弹窗分享 -->
+<div class="cover"></div>
+<div class="FX_weixin">
+    <div class="modal_header">分享到微信朋友圈</div>
+    <div class="modal_body">
+        <div style="margin-top: 20px;">{{act.title}}</div>
+        <div id="code"></div>
+    </div>
+    <div class="modal_footer">打开微信，点击底部的“发现”，使用 “扫一扫”<br>
+        即可将网页分享到我的朋友圈。
+    </div>
+    <span class="close"><img src="https://scdn.yourbay.net/image/png/ewmClose.png" alt="" class="ewmClose"></span>
+</div>
+<!-- 点击微信弹窗分享2 -->
+<div class="cover2"></div>
+<div class="FX_weixin2">
+    <div class="modal_header">扫码立即报名</div>
+    <div class="modal_body">
+        <div id="code2"></div>
+    </div>
+    <div class="modal_footer">打开微信，点击底部的“发现”，使用 “扫一扫”
+    </div>
+    <span class="close2">
+            <img src="https://scdn.yourbay.net/image/png/ewmClose.png" alt="" class="ewmClose">
+        </span>
+</div>
+
+<!-- 点击-报名-弹窗 -->
+<div class="showSignCover">
+    <h6 class="SignCover-group sameh6">组别<span>(请选择)</span></h6>
+    <div class="SignCoverCon">
+        <div>
+            <ul>
+                <li class="grouplist ">【幼儿甲组(5岁)】210元</li>
+                <li class="grouplist add">
+                    <span class="vipbg"></span>
+                    【幼儿甲组(5岁)】210元
+                </li>
+                <li class="grouplist">
+                    <span class="vipbg"></span>
+                    【幼儿甲组(5岁)】210元
+                </li>
+            </ul>
+        </div>
+
+        <div>
+            <h6 class="sameh6">组别信息</h6>
+            <div class="listbox">
+                <span class="sametysle">瑞士制</span>
+                <span class="sametysle">5m+3s</span>
+                <span class="sametysle">小兵大战（添车马象后）</span>
+            </div>
+        </div>
+        <div>
+            <h6 class="sameh6">轮次时间</h6>
+            <ul class="listbox">
+                <li style="color:#808080;">第1轮：2018年10月13日 13:00-14:23</li>
+            </ul>
+        </div>
+        <div>
+            <h6 class="sameh6">报名条件</h6>
+            <div class="listbox">
+                <span class="sametysle">实名认证</span>
+                <span class="sametysle">记等级分</span>
+                <span class="sametysle">女</span>
+                <span class="sametysle">等级分1300-1800</span>
+                <span class="sametysle">生日2010/09/10-2019/09/12</span>
+                <span class="sametysle">三级运动员/棋协候补大师～二级运动员/棋协大师</span>
+            </div>
+        </div>
+    </div>
+    <div class="btnSure">
+        <!-- <a href="javascript:;" ng-click="GotoSign()" style="color:#fff;"> -->
+        <span class="sure">确定</span>
+        <!-- </a> -->
+    </div>
+</div>
+
+<!--报名错误详情 弹窗-->
+ <div class="procover">
+    <div class="procontent">
+        <h2 class="title">报名未完成</h2>
+        <div class="text">
+            <div>未完成报名分组：{{signgroupname}}</div>
+            <div ng-repeat="item in conderrlist" ng-init="showindex=$index+1"
+            ng-class="{'conderr_url':item.hdid != -100,'conderr_nourl':item.hdid==-100}"
+            ng-click="ClickCondErr(item)">{{showindex}}、{{item.msg}}(点击继续报名)</div>
+        </div>
+        <div class="btnbox"><button class="agree" ng-click="ReloadPage()">确定</button></div>
+    </div>
+</div>
+
+
+<!-- 活动被删除后--展示 ng-show="resperr!=0 "-->
+<div ng-cloak class="noinfo">
+    <div class="noinfo-content">
+        <img src="https://webcdn.kaisaile.org/WechatIMG8.png" alt="">
+        <p style="text-align:center" class="hint">此比赛已被删除，不能查看，<br> 请联系主办方获取新地址</p>
+    </div>
+</div>
+
+<!--[if (gte IE 9)|!(IE)]><!-->
+<script src="https://scdn.kaisaile.org/jquery/3.3.1/jquery.min.js"></script>
+<!--<![endif]-->
+<!--[if lte IE 8 ]>
+<script src="https://libs.baidu.com/jquery/1.11.3/jquery.min.js"></script>
+<script src="https://cdn.staticfile.org/modernizr/2.8.3/modernizr.js"></script>
+<script src="js/amazeui.ie8polyfill.min.js"></script>
+<![endif]-->
+
+<script src="https://apps.bdimg.com/libs/angular.js/1.4.6/angular.min.js"></script>
+<script src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js"></script>
+
+<script src="https://webcdn.kaisaile.org/webjs/amazeui.min.js"></script>
+<script src="__ROOT__/Public/js/nbv/common.js"></script>
+<script type="text/javascript" src="__PUBLIC__/youbei/js/core/app.js"></script>
+<script src="https://webcdn.kaisaile.org/webjs/jquery.cookie.js"></script>
+<script src="https://scdn.kaisaile.org/js/dayjs/dayjs.min.js"></script>
+<script src="__ROOT__/src/test/temp2.js?ver=1.5.9"></script>
+<script>
+    window.onload = function () {
+        var _rstrsBtn = document.getElementById("actnumber");
+        if (_rstrsBtn) {
+            _rstrsBtn.onclick = function () {
+                _strs.text = _strs.text.replace(/^(\s|\u00A0)+|(\s|\u00A0)+$/g, "");
+            };
+        }
+
+    }
+    $('#code').html('');
+    $('#code').qrcode(window.location.href);
+    $(".Cwx").click(function () {
+        $(".cover").show();
+        $(".FX_weixin").show();
+        $("#code canvas").css("width", 190);
+        $("#code canvas").css("height", 190);
+    })
+    $(".close").click(function () {
+        $(".cover").hide();
+        $(".FX_weixin").hide();
+    })
+    var LiLth = $('#btnbox>li').length;
+    if (LiLth == 2) {
+        $('#btnbox>li:first-child a').css({
+            'background': '#fff',
+            'border': '1px solid #ddd'
+        });
+        $('#btnbox>li:first-child span:first-child').css('color', '#000');
+        $('#btnbox>li:first-child span:last-child').css('color', '#000')
+    }
+    var DivLth = $('#Buttons>div').length;
+    if (DivLth == 3) {
+        $('#Buttons').css('width', '104%')
+    }
+</script>
+
+</body>
+
+</html>

@@ -182,9 +182,13 @@ export function deactivate() {
  * 这个函数用于记录普通日志信息。
  * @param {string} message - 要记录的日志消息
  */
-export function log(message: string): void {
+export function log(message: string) {
 	if (vscode.workspace.getConfiguration('angularHelper').get<boolean>('enableLogging', true)) {
-		outputChannel.appendLine(`[${new Date().toLocaleString()}] ${message}`);
+		if (outputChannel) {
+			outputChannel.appendLine(`[${new Date().toLocaleString()}] ${message}`);
+		} else {
+			console.log(message); // 在测试环境中使用控制台日志
+		}
 	}
 }
 
@@ -197,6 +201,16 @@ export function log(message: string): void {
 export function logError(message: string, error: unknown): void {
 	if (vscode.workspace.getConfiguration('angularHelper').get<boolean>('enableLogging', true)) {
 		const errorMessage = error instanceof Error ? error.stack || error.message : String(error);
-		outputChannel.appendLine(`[${new Date().toLocaleString()}] ERROR: ${message}\n${errorMessage}`);
+		// 添加空值检查
+		if (outputChannel) {
+			outputChannel.appendLine(`[${new Date().toLocaleString()}] ERROR: ${message}\n${errorMessage}`);	
+		} else {
+			console.error(`ERROR: ${message}`, error); // 在测试环境中使用控制台错误日志
+		}
 	}
+}
+
+// 添加这个新函数
+export function setOutputChannel(channel: vscode.OutputChannel) {
+	outputChannel = channel;
 }

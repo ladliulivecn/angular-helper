@@ -65,8 +65,8 @@
         "angularHelper.rootDirAliases": {
           "type": "object",
           "default": {
-            "__ROOT__": "",
-            "__PUBLIC__": "Public"
+            "__ROOT__": "./",
+            "__PUBLIC__": "./Public"
           },
           "description": "根目录别名映射。键是别名，值是相对于工作区根目录的路径。"
         },
@@ -100,7 +100,7 @@
     "pretest": "npm run compile-tests && npm run compile && npm run lint",
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "node ./out/test/runTest.js"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.8",
@@ -116,6 +116,6 @@
     "typescript": "^5.6.2"
   },
   "dependencies": {
-    "lru-cache": "^11.0.1"
+    "lru-cache": "^7.18.3"
   }
 }

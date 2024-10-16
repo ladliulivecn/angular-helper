@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { AngularDefinition, AngularParser, FileInfo } from './angularParser';
-import { LRUCache } from 'lru-cache';
+import LRUCache  from 'lru-cache';
 import * as path from 'path';
 import { log, logError } from './extension';
 

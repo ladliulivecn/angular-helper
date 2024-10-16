@@ -1,5 +1,5 @@
 /* eslint-disable curly */
-import { LRUCache } from 'lru-cache';
+import LRUCache from 'lru-cache';
 import * as path from 'path';
 import * as ts from 'typescript';
 import * as vscode from 'vscode';
@@ -55,7 +55,6 @@ export interface FileInfo {
     ngAttributes: Map<string, AngularDefinition>;
     ngDirectives: string[];
     ngControllers: Map<string, AngularDefinition>;
-    styles: Map<string, AngularDefinition>;
     [key: string]: Map<string, AngularDefinition> | string[] | undefined;
 }
 
@@ -74,6 +73,7 @@ export class AngularParser {
     private ignorePatterns: string[];
     private htmlToJsMap: Map<string, string[]> = new Map();
     private jsToHtmlMap: Map<string, string[]> = new Map();
+    private mockWorkspacePath: string | null = null;
 
     /**
      * 创建 AngularParser 的实例
@@ -91,8 +91,8 @@ export class AngularParser {
         });
 
         this.rootDirAliases = config.get<{ [key: string]: string }>('rootDirAliases', {
-            '__ROOT__': '',
-            '__PUBLIC__': 'Public'
+            '__ROOT__': './',
+            '__PUBLIC__': './Public'
         });
         this.ignorePatterns = config.get<string[]>('ignoreScriptPatterns', [
             '*.min.js',
@@ -102,6 +102,9 @@ export class AngularParser {
 
         // 添加默认忽略的文件夹
         this.ignorePatterns.push(...AngularParser.getDefaultExcludePatterns());
+
+        log(`初始化 AngularParser，忽略模式: ${this.ignorePatterns.join(', ')}`);
+        log(`Root dir aliases: ${JSON.stringify(this.rootDirAliases)}`);
     }
     
     /**
@@ -291,18 +294,89 @@ export class AngularParser {
 
             const fileInfo: FileInfo = this.createEmptyFileInfo();
 
+            log(`开始解析 JavaScript 文件: ${document.fileName}`);
+
             ts.forEachChild(sourceFile, node => {
                 if (ts.isVariableStatement(node)) {
                     this.parseVariableStatement(node, fileInfo);
                 } else if (ts.isFunctionDeclaration(node)) {
                     this.parseFunctionDeclaration(node, fileInfo);
+                } else if (ts.isExpressionStatement(node)) {
+                    this.parseExpressionStatement(node, fileInfo);
                 }
             });
+
+            // 添加简洁的摘要日志
+            log(`文件解析摘要 - ${document.fileName}:`);
+            log(`  模块: ${fileInfo.components.size}`);
+            log(`  控制器: ${fileInfo.controllers.size}`);
+            log(`  服务: ${fileInfo.services.size}`);
+            log(`  指令: ${fileInfo.directives.size}`);
+            log(`  函数: ${fileInfo.functions.size}`);
 
             return fileInfo;
         } catch (error) {
             logError(`解析 JavaScript 文件 ${document.fileName} 时出错:`, error);
             return this.createEmptyFileInfo();
+        }
+    }
+
+    /**
+     * 解析表达式语句
+     * 此方法用于解析Angular模块和控制器的定义
+     * @private
+     * @param {ts.ExpressionStatement} node - 表达式语句节点
+     * @param {FileInfo} fileInfo - 文件信息对象
+     */
+    private parseExpressionStatement(node: ts.ExpressionStatement, fileInfo: FileInfo): void {
+        if (!ts.isCallExpression(node.expression)) return;
+
+        const callExpression = node.expression;
+        if (ts.isPropertyAccessExpression(callExpression.expression)) {
+            const propertyAccess = callExpression.expression;
+            const firstArgument = callExpression.arguments[0];
+
+            if (firstArgument && ts.isStringLiteral(firstArgument)) {
+                const name = firstArgument.text;
+                const position = node.getStart();
+                const type = propertyAccess.name.text;
+
+                const definition: AngularDefinition = { name, position, type };
+
+                switch (type) {
+                    case 'module':
+                        log(`发现 Angular 模块: ${name}`);
+                        fileInfo.components.set(name, definition);
+                        break;
+                    case 'controller':
+                        log(`发现控制器: ${name}`);
+                        fileInfo.controllers.set(name, definition);
+                        break;
+                    case 'service':
+                    case 'factory':
+                        log(`发现服务/工厂: ${name}`);
+                        fileInfo.services.set(name, definition);
+                        break;
+                    case 'directive':
+                        log(`发现指令: ${name}`);
+                        fileInfo.directives.set(name, definition);
+                        break;
+                    case 'component':
+                        log(`发现组件: ${name}`);
+                        fileInfo.components.set(name, definition);
+                        break;
+                }
+            }
+        } else if (ts.isIdentifier(callExpression.expression) && callExpression.expression.text === 'angular') {
+            // 处理 angular.module('moduleName', []) 的情况
+            const firstArgument = callExpression.arguments[0];
+            if (firstArgument && ts.isStringLiteral(firstArgument)) {
+                const name = firstArgument.text;
+                const position = node.getStart();
+                const definition: AngularDefinition = { name, position, type: 'module' };
+                log(`发现 Angular 模块: ${name}`);
+                fileInfo.components.set(name, definition);
+            }
         }
     }
 
@@ -389,58 +463,85 @@ export class AngularParser {
             const content = document.getText();
             const fileInfo = this.createEmptyFileInfo();
             
-            // 优先解析导入的 JavaScript 文件
+            log(`开始解析 HTML 文件: ${document.fileName}`);
+
+            const scriptRegex = /<script\s+(?:[^>]*?\s+)?src=["']([^"']+)["'][^>]*>/g;
+            let match;
+            while ((match = scriptRegex.exec(content)) !== null) {
+                const scriptSrc = match[1];
+                if (!this.shouldIgnoreScript(scriptSrc)) {
+                    this.updateScriptMaps(scriptSrc, document.uri);
+                }
+            }
+
             const importedScripts = this.findImportedScripts(content, document.uri);
             for (const scriptUri of importedScripts) {
                 try {
-                    const scriptDocument = await vscode.workspace.openTextDocument(scriptUri);
-                    const scriptFileInfo = this.parseJavaScriptFile(scriptDocument);
-                    this.mergeFileInfo(fileInfo, scriptFileInfo);
+                    if (await this.fileExists(scriptUri)) {
+                        const scriptDocument = await vscode.workspace.openTextDocument(scriptUri);
+                        const scriptFileInfo = this.parseJavaScriptFile(scriptDocument);
+                        this.mergeFileInfo(fileInfo, scriptFileInfo);
+                    }
                 } catch (error) {
                     logError(`解析导入的脚本文件 ${scriptUri.fsPath} 时出错:`, error);
                 }
             }
 
-            // 解析 ng-* 属性
-            const ngAttributes = content.match(/\bng-[a-zA-Z-]+="([^"]+)"/g) || [];
-            ngAttributes.forEach(attr => {
-                const match = attr.match(/ng-([a-zA-Z-]+)="([^"]+)"/);
-                if (match) {
-                    fileInfo.ngAttributes.set(match[2], {
-                        name: match[1],
-                        position: content.indexOf(attr),
-                        type: 'ngAttribute',
-                        value: match[2]
-                    });
-                }
-            });
+            this.parseNgAttributes(content, fileInfo);
 
-            // 解析 ng 指令
-            const ngDirectives = content.match(/\*ng[a-zA-Z]+="([^"]+)"/g) || [];
-            fileInfo.ngDirectives = ngDirectives;
-
-            // 解析 ng-controller
-            const ngControllers = content.match(/ng-controller="([^"]+)"/g) || [];
-            ngControllers.forEach(ctrl => {
-                const match = ctrl.match(/ng-controller="([^"]+)"/);
-                if (match) {
-                    fileInfo.ngControllers.set(match[1], {
-                        name: match[1],
-                        position: content.indexOf(ctrl),
-                        type: 'ngController',
-                        value: match[1]
-                    });
-                }
-            });
-
-            // 解析样式
-            this.parseStyles(content, fileInfo);
-
+            log(`解析到的 ng-* 属性数量: ${fileInfo.ngAttributes.size}`);
+            log(`成功解析文件: ${document.fileName}`);
             return fileInfo;
         } catch (error) {
             logError(`解析 HTML 文件 ${document.fileName} 时出错:`, error);
             return this.createEmptyFileInfo();
         }
+    }
+
+    private updateScriptMaps(scriptSrc: string, documentUri: vscode.Uri): void {
+        const resolvedPath = this.resolveScriptPath(scriptSrc, documentUri);
+        if (resolvedPath) {
+            const fileName = path.basename(resolvedPath.fsPath);
+            if (!this.htmlToJsMap.has(documentUri.fsPath)) {
+                this.htmlToJsMap.set(documentUri.fsPath, []);
+            }
+            this.htmlToJsMap.get(documentUri.fsPath)!.push(fileName);
+            
+            if (!this.jsToHtmlMap.has(resolvedPath.fsPath)) {
+                this.jsToHtmlMap.set(resolvedPath.fsPath, []);
+            }
+            this.jsToHtmlMap.get(resolvedPath.fsPath)!.push(documentUri.fsPath);
+        }
+    }
+
+    private parseNgAttributes(content: string, fileInfo: FileInfo): void {
+        const ngAttributeRegex = /\bng-([a-zA-Z-]+)(?:=["']([^"']*)?["'])?/g;
+        let match;
+        while ((match = ngAttributeRegex.exec(content)) !== null) {
+            const attrName = match[1];
+            const attrValue = match[2] || '';
+            fileInfo.ngAttributes.set(attrName, {
+                name: attrName,
+                position: match.index,
+                type: 'ngAttribute',
+                value: attrValue
+            });
+        }
+
+        fileInfo.ngDirectives = content.match(/ng-[a-zA-Z]+="([^"]+)"/g) || [];
+
+        const ngControllers = content.match(/ng-controller="([^"]+)"/g) || [];
+        ngControllers.forEach(ctrl => {
+            const match = ctrl.match(/ng-controller="([^"]+)"/);
+            if (match) {
+                fileInfo.ngControllers.set(match[1], {
+                    name: match[1],
+                    position: content.indexOf(ctrl),
+                    type: 'ngController',
+                    value: match[1]
+                });
+            }
+        });
     }
 
     private findImportedScripts(content: string, documentUri: vscode.Uri): vscode.Uri[] {
@@ -466,37 +567,67 @@ export class AngularParser {
     }
 
     private shouldIgnoreScript(scriptSrc: string): boolean {
-        return this.ignorePatterns.some(pattern => {
-            if (pattern.startsWith('http') || pattern.startsWith('https')) {
-                return scriptSrc.startsWith(pattern);
+        for (const pattern of this.ignorePatterns) {
+            const regex = this.createRegexFromPattern(pattern);
+            if (regex.test(scriptSrc)) {
+                return true;
             }
-            return new RegExp(pattern.replace('*', '.*')).test(scriptSrc);
-        });
+        }
+        return false;
+    }
+
+    private createRegexFromPattern(pattern: string): RegExp {
+        let regexPattern = pattern
+            .replace(/\./g, '\\.')
+            .replace(/\*\*/g, '.*')
+            .replace(/\*/g, '[^/]*');
+
+        if (pattern.startsWith('http://') || pattern.startsWith('https://')) {
+            regexPattern = `^${regexPattern}`;
+        } else {
+            regexPattern = `(^|/)${regexPattern}($|/)`;
+        }
+
+        return new RegExp(regexPattern);
     }
 
     private resolveScriptPath(scriptSrc: string, documentUri: vscode.Uri): vscode.Uri | null {
+        let resolvedPath: string = scriptSrc;
+
         // 处理根目录别名
         for (const [alias, replacement] of Object.entries(this.rootDirAliases)) {
             if (scriptSrc.startsWith(alias)) {
-                scriptSrc = scriptSrc.replace(alias, replacement);
+                resolvedPath = scriptSrc.replace(alias, replacement);
                 break;
             }
         }
 
         // 移除查询参数
-        scriptSrc = scriptSrc.split('?')[0];
+        resolvedPath = resolvedPath.split('?')[0];
 
-        if (path.isAbsolute(scriptSrc)) {
-            return vscode.Uri.file(scriptSrc);
+        const basePath = this.getWorkspacePath(documentUri);
+
+        // 如果是相对路径，则相对于基准路径解析
+        if (!path.isAbsolute(resolvedPath)) {
+            resolvedPath = path.resolve(basePath, resolvedPath);
+        } else {
+            // 如果是绝对路径，则直接使用，但确保使用正确的分隔符
+            resolvedPath = path.normalize(resolvedPath).replace(/\\/g, '/');
         }
 
+        return vscode.Uri.file(resolvedPath);
+    }
+
+    private getWorkspacePath(documentUri: vscode.Uri): string {
+        if (this.mockWorkspacePath) {
+            return this.mockWorkspacePath;
+        }
         const workspaceFolder = vscode.workspace.getWorkspaceFolder(documentUri);
-        if (!workspaceFolder) {
-            return null;
+        if (workspaceFolder) {
+            return workspaceFolder.uri.fsPath;
         }
-
-        const absolutePath = path.resolve(workspaceFolder.uri.fsPath, scriptSrc);
-        return vscode.Uri.file(absolutePath);
+        // 如果找不到工作区文件夹，使用文档所在目录作为基准
+        return path.dirname(documentUri.fsPath);
     }
 
     private mergeFileInfo(target: FileInfo, source: FileInfo): void {
@@ -519,30 +650,6 @@ export class AngularParser {
         }
     }
 
-    private parseStyles(content: string, fileInfo: FileInfo): void {
-        const styleRegex = /<style[^>]*>([\s\S]*?)<\/style>/gi;
-        let match;
-        while ((match = styleRegex.exec(content)) !== null) {
-            const styleContent = match[1];
-            const styleStart = match.index + match[0].indexOf('>') + 1;
-            this.parseStyleContent(styleContent, styleStart, fileInfo);
-        }
-    }
-
-    private parseStyleContent(styleContent: string, styleStart: number, fileInfo: FileInfo): void {
-        const selectorRegex = /([.#][^\s{]+)\s*{/g;
-        let match;
-        while ((match = selectorRegex.exec(styleContent)) !== null) {
-            const selector = match[1];
-            const position = styleStart + match.index;
-            fileInfo.styles.set(selector, {
-                name: selector,
-                position: position,
-                type: 'style'
-            });
-        }
-    }
-
     /**
      * 创建空的文件信息对象
      * @private
@@ -559,7 +666,6 @@ export class AngularParser {
             ngAttributes: new Map(),
             ngDirectives: [],
             ngControllers: new Map(),
-            styles: new Map(),
         };
     }
 
@@ -590,8 +696,13 @@ export class AngularParser {
 
     private shouldIgnoreFile(filePath: string): boolean {
         return this.ignorePatterns.some(pattern => {
-            const regexPattern = new RegExp(pattern.replace(/\*/g, '.*'));
-            return regexPattern.test(filePath);
+            // 将通配符模式转换为正则表达式
+            const regexPattern = pattern
+                .replace(/\./g, '\\.')  // 转义点号
+                .replace(/\*\*/g, '.*')  // 将 ** 转换为 .*
+                .replace(/\*/g, '[^/]*');  // 将单个 * 转换为 [^/]*
+            const regex = new RegExp(`^${regexPattern}$`);
+            return regex.test(filePath);
         });
     }
 
@@ -607,5 +718,19 @@ export class AngularParser {
             '.vscode/**',
             'doc/**'
         ];
+    }
+
+    // 添加这个新方法来检查文件是否存在
+    private async fileExists(fileUri: vscode.Uri): Promise<boolean> {
+        try {
+            await vscode.workspace.fs.stat(fileUri);
+            return true;
+        } catch {            return false;
+        }
+    }
+
+    // 用于测试的方法，允许设置模拟的工作区路径
+    public setMockWorkspacePath(mockPath: string | null): void {
+        this.mockWorkspacePath = mockPath;
     }
 }
