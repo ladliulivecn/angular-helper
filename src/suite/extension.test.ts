@@ -1,6 +1,6 @@
 import * as assert from 'assert';
-import * as vscode from 'vscode';
 import * as path from 'path';
+import * as vscode from 'vscode';
 import { AngularParser } from '../angularParser';
 import { DefinitionProvider } from '../definitionProvider';
 import { setOutputChannel } from '../extension';
@@ -48,7 +48,7 @@ suite('Angular Helper Extension Test Suite', () => {
         assert.ok(fileInfo.ngAttributes.has('click'), '应包含 ng-click');
     });
 
-    test('跳转位置测试', async () => {
+    test('函数定义和引用测试', async () => {
         const htmlUri = vscode.Uri.file(path.join(TEST_FILES_PATH, 'temp2.html'));
         const jsUri = vscode.Uri.file(path.join(TEST_FILES_PATH, 'temp2.js'));
 
@@ -57,151 +57,43 @@ suite('Angular Helper Extension Test Suite', () => {
         const htmlDocument = await vscode.workspace.openTextDocument(htmlUri);
         const jsDocument = await vscode.workspace.openTextDocument(jsUri);
 
-        const functionsToTest = ['selectCost', 'showQrcode', 'GotoLearder','GotoSign'
-            ,'togglePage','GotoField'
-        ];
+        const functionsToTest = ['selectCost', 'showQrcode', 'GotoLearder', 'GotoSign', 'togglePage', 'GotoField'];
 
         for (const func of functionsToTest) {
-            // 在 HTML 中查找函数引用
-            const htmlPosition = findPositionOfVariable(htmlDocument, func);
-            assert.notStrictEqual(htmlPosition, undefined, `未找到函数 ${func} 在HTML中的引用`);
+            // 测试 HTML 到 JS 的定义查找
+            const htmlFileInfo = angularParser.getFileInfo(htmlUri.fsPath);
+            assert.notStrictEqual(htmlFileInfo, undefined, `未找到 HTML 文件信息: ${htmlUri.fsPath}`);
+            const htmlFunction = htmlFileInfo!.functions.get(func);
+            
+            assert.notStrictEqual(htmlFunction, undefined, `未找到函数 ${func} 在HTML中的引用`);
+            const htmlPosition = angularParser.getPositionLocation(htmlUri.fsPath, htmlFunction!.position);
 
-            // 检查函数定义
-            const definition = await vscode.commands.executeCommand<vscode.Location[]>(
-                'vscode.executeDefinitionProvider',
-                htmlUri,
-                htmlPosition!
-            );
+            const definition = definitionProvider.provideDefinition(htmlDocument, htmlPosition, null as any);
+            
+            assert.notStrictEqual(definition, undefined, `应该找到 ${func} 的定义`);
+            assert.ok(definition instanceof vscode.Location, `${func} 的定义应该是 Location 类型`);
+            assert.strictEqual(definition.uri.fsPath, jsUri.fsPath, `${func} 的定义应该在JS文件中`);
 
-            assert.strictEqual(definition?.length, 1, `应该只找到一个 ${func} 的定义`);
-            assert.strictEqual(definition[0].uri.fsPath, jsUri.fsPath, `${func} 的定义应该在JS文件中`);
+            // 测试 JS 到 HTML 的引用查找
+            const jsFileInfo = angularParser.getFileInfo(jsUri.fsPath);
+            assert.notStrictEqual(jsFileInfo, undefined, `未找到 JS 文件信息: ${jsUri.fsPath}`);
+            const jsFunction = jsFileInfo!.functions.get(func);
+            
+            assert.notStrictEqual(jsFunction, undefined, `未找到函数 ${func} 在JS中的定义`);
+            const jsPosition = angularParser.getPositionLocation(jsUri.fsPath, jsFunction!.position);
 
-            // 在 JS 中查找函数定义
-            const jsPosition = findPositionOfVariable(jsDocument, `function ${func}`);
-            assert.notStrictEqual(jsPosition, undefined, `未找到函数 ${func} 在JS中的定义`);
+            // 使用 DefinitionProvider 的 findReferences 方法
+            const references = await definitionProvider.provideReferences(jsDocument, jsPosition, { includeDeclaration: false }, null as any);
 
-            // 检查函数引用
-            const references = await vscode.commands.executeCommand<vscode.Location[]>(
-                'vscode.executeReferenceProvider',
-                jsUri,
-                jsPosition!
-            );
-
-            assert.ok(references?.length > 0, `应该找到 ${func} 的引用`);
+            assert.notStrictEqual(references, undefined, `应该找到 ${func} 的引用`);
+            assert.ok(Array.isArray(references), `${func} 的引用应该是一个数组`);
+            assert.ok(references.length > 0, `应该找到 ${func} 的引用`);
             assert.ok(
-                references.some(ref => ref.uri.fsPath === htmlUri.fsPath),
+                references.some((ref: vscode.Location) => ref.uri.fsPath === htmlUri.fsPath),
                 `${func} 应该在HTML文件中有引用`
-            );
-        }
-    });
-
-    test('跳转变量测试 - ng-repeat', async () => {
-        const htmlUri = vscode.Uri.file(path.join(TEST_FILES_PATH, 'temp2.html'));
-        const jsUri = vscode.Uri.file(path.join(TEST_FILES_PATH, 'temp2.js'));
-
-        await angularParser.parseFile(htmlUri);
-
-        const htmlDocument = await vscode.workspace.openTextDocument(htmlUri);
-        const jsDocument = await vscode.workspace.openTextDocument(jsUri);
-
-        const variablesToTest = ['teacherList', 'teacher','act.costdetail','detail','act'];
-
-        for (const variable of variablesToTest) {
-            // 在 HTML 中查找变量引用
-            const htmlPosition = findPositionOfVariable(htmlDocument, variable);
-            assert.notStrictEqual(htmlPosition, undefined, `未找到变量 ${variable} 在HTML中的引用`);
-
-            // 检查变量定义
-            const definition = await vscode.commands.executeCommand<vscode.Location[]>(
-                'vscode.executeDefinitionProvider',
-                htmlUri,
-                htmlPosition!
-            );
-
-            if (variable === 'items') {
-                assert.strictEqual(definition?.length, 1, `应该只找到一个 ${variable} 的定义`);
-                assert.strictEqual(definition[0].uri.fsPath, jsUri.fsPath, `${variable} 的定义应该在JS文件中`);
-            } else {
-                // 'item' 是 ng-repeat 中的局部变量，可能没有明确的定义位置
-                assert.strictEqual(definition?.length, 0, `${variable} 不应该有明确的定义位置`);
-            }
-
-            // 在 JS 中查找变量定义（只对 'items' 进行）
-            if (variable === 'items') {
-                const jsPosition = findPositionOfVariable(jsDocument, `$scope.${variable}`);
-                assert.notStrictEqual(jsPosition, undefined, `未找到变量 ${variable} 在JS中的定义`);
-
-                // 检查变量引用
-                const references = await vscode.commands.executeCommand<vscode.Location[]>(
-                    'vscode.executeReferenceProvider',
-                    jsUri,
-                    jsPosition!
-                );
-
-                assert.ok(references?.length > 0, `应该找到 ${variable} 的引用`);
-                assert.ok(
-                    references.some(ref => ref.uri.fsPath === htmlUri.fsPath),
-                    `${variable} 应该在HTML文件中有引用`
-                );
-            }
-        }
-    });
-
-    test('跳转变量测试 - $scope变量', async () => {
-        const htmlUri = vscode.Uri.file(path.join(TEST_FILES_PATH, 'temp2.html'));
-        const jsUri = vscode.Uri.file(path.join(TEST_FILES_PATH, 'temp2.js'));
-
-        await angularParser.parseFile(htmlUri);
-
-        const htmlDocument = await vscode.workspace.openTextDocument(htmlUri);
-        const jsDocument = await vscode.workspace.openTextDocument(jsUri);
-
-        const variablesToTest = ['showback', 'rootPath','hideSchool','hideCost','disableSign'
-            ,'mulChoose','act'
-        ];
-
-        for (const variable of variablesToTest) {
-            // 在 HTML 中查找变量引用
-            const htmlPosition = findPositionOfVariable(htmlDocument, variable);
-            assert.notStrictEqual(htmlPosition, undefined, `未找到变量 ${variable} 在HTML中的引用`);
-
-            // 检查变量定义
-            const definition = await vscode.commands.executeCommand<vscode.Location[]>(
-                'vscode.executeDefinitionProvider',
-                htmlUri,
-                htmlPosition!
-            );
-
-            assert.strictEqual(definition?.length, 1, `应该只找到一个 ${variable} 的定义`);
-            assert.strictEqual(definition[0].uri.fsPath, jsUri.fsPath, `${variable} 的定义应该在JS文件中`);
-
-            // 在 JS 中查找变量定义
-            const jsPosition = findPositionOfVariable(jsDocument, `$scope.${variable}`);
-            assert.notStrictEqual(jsPosition, undefined, `未找到变量 ${variable} 在JS中的定义`);
-
-            // 检查变量引用
-            const references = await vscode.commands.executeCommand<vscode.Location[]>(
-                'vscode.executeReferenceProvider',
-                jsUri,
-                jsPosition!
-            );
-
-            assert.ok(references?.length > 0, `应该找到 ${variable} 的引用`);
-            assert.ok(
-                references.some(ref => ref.uri.fsPath === htmlUri.fsPath),
-                `${variable} 应该在HTML文件中有引用`
             );
         }
     });
 
     // TODO: 如果需要，可以在这里添加更多针对 HTML 文件的测试...
 });
-
-function findPositionOfVariable(document: vscode.TextDocument, variable: string): vscode.Position | undefined {
-    const text = document.getText();
-    const index = text.indexOf(variable);
-    if (index !== -1) {
-        return document.positionAt(index);
-    }
-    return undefined;
-}

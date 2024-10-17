@@ -85,6 +85,8 @@ export class AngularParser {
     private jsToHtmlMap: Map<string, string[]> = new Map();
     private mockWorkspacePath: string | null = null;
     private resolvedPathCache: LRUCache<string, vscode.Uri | null>;
+    private enablePropertyAssignmentFunctions: boolean = false;
+    private enableObjectLiteralFunctions: boolean = false;
 
     /**
      * 创建 AngularParser 的实例
@@ -111,6 +113,10 @@ export class AngularParser {
             max: resolvedPathCacheSize,
             ttl: resolvedPathCacheTTL
         });
+
+
+        log(`属性赋值函数查找已${this.enablePropertyAssignmentFunctions ? '启用' : '禁用'}`);
+        log(`对象字面量函数查找已${this.enableObjectLiteralFunctions ? '启用' : '禁用'}`);
 
         log(`初始化 AngularParser，忽略模式: ${this.ignorePatterns.join(', ')}`);
         log(`Root dir aliases: ${JSON.stringify(this.rootDirAliases)}`);
@@ -280,7 +286,7 @@ export class AngularParser {
             }
 
             this.fileMap.set(fileName, fileInfo);
-            log(`成功解析文件: ${fileName}`);
+            // log(`成功解析文件: ${fileName}`);
         } catch (error) {
             logError(`解析文件 ${fileName} 时发生错误:`, error);
             throw error;
@@ -307,7 +313,36 @@ export class AngularParser {
             log(`开始解析 JavaScript 文件: ${document.fileName}`);
 
             const visit = (node: ts.Node) => {
-                this.parseNode(node, fileInfo);
+                if (ts.isFunctionDeclaration(node) && node.name) {
+                    const position = this.getPositionLocation(document.fileName, node.getStart());
+                    this.addFunctionToFileInfo(fileInfo, node.name.text, node.getStart());
+                    log(`找到函数声明: ${node.name.text} 位置: 行 ${position.line + 1}, 列 ${position.character + 1}`);
+                } else if (ts.isVariableStatement(node)) {
+                    node.declarationList.declarations.forEach(declaration => 
+                        this.handleVariableDeclaration(fileInfo, document.fileName, declaration));
+                } else if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name)) {
+                    const position = this.getPositionLocation(document.fileName, node.getStart());
+                    this.addFunctionToFileInfo(fileInfo, node.name.text, node.getStart());
+                    log(`找到方法声明: ${node.name.text} 位置: 行 ${position.line + 1}, 列 ${position.character + 1}`);
+                } else if (this.enablePropertyAssignmentFunctions && ts.isPropertyAssignment(node) && ts.isIdentifier(node.name)) {
+                    if (ts.isFunctionExpression(node.initializer) || ts.isArrowFunction(node.initializer)) {
+                        const position = this.getPositionLocation(document.fileName, node.getStart());
+                        this.addFunctionToFileInfo(fileInfo, node.name.text, node.getStart());
+                        log(`找到属性赋值函数: ${node.name.text} 位置: 行 ${position.line + 1}, 列 ${position.character + 1}`);
+                    }
+                } else if (ts.isExpressionStatement(node)) {
+                    this.handleExpressionStatement(fileInfo, node, document.fileName);
+                } else if (this.enableObjectLiteralFunctions && ts.isObjectLiteralExpression(node)) {
+                    node.properties.forEach(prop => {
+                        if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name)) {
+                            if (ts.isFunctionExpression(prop.initializer) || ts.isArrowFunction(prop.initializer)) {
+                                const position = this.getPositionLocation(document.fileName, prop.getStart());
+                                this.addFunctionToFileInfo(fileInfo, prop.name.text, prop.getStart());
+                                log(`找到对象字面量函数: ${prop.name.text} 位置: 行 ${position.line + 1}, 列 ${position.character + 1}`);
+                            }
+                        }
+                    });
+                }
                 ts.forEachChild(node, visit);
             };
 
@@ -320,12 +355,68 @@ export class AngularParser {
             log(`  服务: ${fileInfo.services.size}`);
             log(`  指令: ${fileInfo.directives.size}`);
             log(`  函数: ${fileInfo.functions.size}`);
+            // log(`  函数列表: ${Array.from(fileInfo.functions.keys()).join(', ')}`);
 
             return fileInfo;
         } catch (error) {
             logError(`解析 JavaScript 文件 ${document.fileName} 时出错:`, error);
             return this.createEmptyFileInfo();
         }
+    }
+
+    private handleVariableDeclaration(fileInfo: FileInfo, fileName: string, declaration: ts.VariableDeclaration) {
+        if (ts.isIdentifier(declaration.name)) {
+            const name = declaration.name.text;
+            if (declaration.initializer) {
+                if (ts.isFunctionExpression(declaration.initializer) || ts.isArrowFunction(declaration.initializer)) {
+                    const position = this.getPositionLocation(fileName, declaration.getStart());
+                    this.addFunctionToFileInfo(fileInfo, name, declaration.getStart());
+                    log(`找到变量声明函数: ${name} 位置: 行 ${position.line + 1}, 列 ${position.character + 1}`);
+                } else if (this.enableObjectLiteralFunctions && ts.isObjectLiteralExpression(declaration.initializer)) {
+                    declaration.initializer.properties.forEach(prop => {
+                        if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name)) {
+                            if (ts.isFunctionExpression(prop.initializer) || ts.isArrowFunction(prop.initializer)) {
+                                const position = this.getPositionLocation(fileName, prop.getStart());
+                                this.addFunctionToFileInfo(fileInfo, `${name}.${prop.name.text}`, prop.getStart());
+                                log(`找到对象属性函数: ${name}.${prop.name.text} 位置: 行 ${position.line + 1}, 列 ${position.character + 1}`);
+                            }
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    private handleExpressionStatement(fileInfo: FileInfo, node: ts.ExpressionStatement, fileName: string) {
+        if (ts.isBinaryExpression(node.expression) && node.expression.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+            const left = node.expression.left;
+            const right = node.expression.right;
+            if (ts.isPropertyAccessExpression(left)) {
+                const object = left.expression;
+                const property = left.name;
+                if (ts.isIdentifier(object) && ts.isIdentifier(property)) {
+                    if (object.text === '$scope' && (ts.isFunctionExpression(right) || ts.isArrowFunction(right))) {
+                        const position = this.getPositionLocation(fileName, node.getStart());
+                        this.addFunctionToFileInfo(fileInfo, property.text, node.getStart());
+                        log(`找到 $scope 函数: ${property.text} 位置: 行 ${position.line + 1}, 列 ${position.character + 1}`);
+                    }
+                }
+            } else if (this.enableObjectLiteralFunctions && ts.isIdentifier(left)) {
+                if (ts.isFunctionExpression(right) || ts.isArrowFunction(right)) {
+                    const position = this.getPositionLocation(fileName, node.getStart());
+                    this.addFunctionToFileInfo(fileInfo, left.text, node.getStart());
+                    log(`找到赋值函数: ${left.text} 位置: 行 ${position.line + 1}, 列 ${position.character + 1}`);
+                }
+            }
+        }
+    }
+
+    private addFunctionToFileInfo(fileInfo: FileInfo, name: string, position: number) {
+        fileInfo.functions.set(name, {
+            name,
+            position,
+            type: 'function'
+        });
     }
 
     private parseNode(node: ts.Node, fileInfo: FileInfo): void {
@@ -466,7 +557,7 @@ export class AngularParser {
             const content = document.getText();
             const fileInfo = this.createEmptyFileInfo();
             
-            log(`开始解析 HTML 文件: ${document.fileName}`);
+            // log(`开始解析 HTML 文件: ${document.fileName}`);
 
             const scriptRegex = /<script\s+(?:[^>]*?\s+)?src=["']([^"']+)["'][^>]*>/g;
             let match;
@@ -592,19 +683,29 @@ export class AngularParser {
         const scripts: vscode.Uri[] = [];
         let match;
 
+        // log(`开始解析 ${documentUri.fsPath} 中的导入脚本`);
+
         while ((match = scriptRegex.exec(content)) !== null) {
             const scriptSrc = match[1];
             
+            // log(`找到脚本引用: ${scriptSrc}`);
+
             // 忽略网络 JS 和压缩 JS
             if (this.shouldIgnoreScript(scriptSrc)) {
+                // log(`忽略脚本: ${scriptSrc}`);
                 continue;
             }
 
             const resolvedPath = this.resolveScriptPath(scriptSrc, documentUri);
             if (resolvedPath) {
+                // log(`解析后的脚本路径: ${resolvedPath.fsPath}`);
                 scripts.push(resolvedPath);
+            } else {
+                // log(`无法解析脚本路径: ${scriptSrc}`);
             }
         }
+
+        log(`共找到 ${scripts.length} 个有效的导入脚本`);
 
         return scripts;
     }
@@ -646,10 +747,14 @@ export class AngularParser {
 
         let resolvedPath: string = scriptSrc;
 
+        // log(`开始解析脚本路径: ${scriptSrc}`);        
+
         // 处理根目录别名
         for (const [alias, replacement] of Object.entries(this.rootDirAliases)) {
             if (scriptSrc.startsWith(alias)) {
                 resolvedPath = scriptSrc.replace(alias, replacement);
+                // log(`应用根目录别名: ${alias} -> ${replacement}`);
+                // log(`解析后的路径: ${resolvedPath}`);
                 break;
             }
         }
@@ -658,33 +763,61 @@ export class AngularParser {
         resolvedPath = resolvedPath.split('?')[0];
 
         const basePath = this.getWorkspacePath(documentUri);
+        // log(`工作区路径: ${basePath}`);
         const documentDir = path.dirname(documentUri.fsPath);
+        // log(`文档所在目录: ${documentDir}`);
 
-        // 处理相对路径
-        if (resolvedPath.startsWith('./') || resolvedPath.startsWith('../')) {
-            // 相对于当前文档的路径
-            resolvedPath = path.resolve(documentDir, resolvedPath);
-        } else if (!path.isAbsolute(resolvedPath)) {
-            // 如果不是绝对路径，也不是明确的相对路径，先尝试相对于当前文档解析
-            let tempPath = path.resolve(documentDir, resolvedPath);
-            if (fs.existsSync(tempPath)) {
-                resolvedPath = tempPath;
+        // 处理相对路径和绝对路径
+        if (path.isAbsolute(resolvedPath)) {
+            // log(`使用绝对路径: ${resolvedPath}`);
+        } else if (resolvedPath.startsWith('./') || resolvedPath.startsWith('../')) {
+            // 如果是相对路径，先检查当前目录，再检查根目录
+            const currentDirPath = path.resolve(documentDir, resolvedPath);
+            const rootDirPath = path.resolve(basePath, resolvedPath);
+            
+            // log(`检查当前目录路径: ${currentDirPath}`);
+            // log(`检查根目录路径: ${rootDirPath}`);
+            
+            if (fs.existsSync(currentDirPath)) {
+                resolvedPath = currentDirPath;
+                // log(`在当前目录找到文件: ${resolvedPath}`);
+            } else if (fs.existsSync(rootDirPath)) {
+                resolvedPath = rootDirPath;
+                // log(`在根目录找到文件: ${resolvedPath}`);
             } else {
-                // 如果相对于当前文档不存在，则尝试相对于工作区根目录解析
-                resolvedPath = path.resolve(basePath, resolvedPath);
+                // log(`警告: 无法在当前目录和根目录找到文件 ${resolvedPath}`);
+                this.resolvedPathCache.set(cacheKey, null);
+                return null;
+            }
+        } else {
+            // 如果不是绝对路径，也不是明确的相对路径，尝试多种解析方式
+            const possiblePaths = [
+                path.resolve(documentDir, resolvedPath),
+                path.resolve(basePath, resolvedPath)
+            ];
+
+            // log(`尝试可能的路径:`);
+            for (const possiblePath of possiblePaths) {
+                // log(`- ${possiblePath}`);
+                if (fs.existsSync(possiblePath)) {
+                    resolvedPath = possiblePath;
+                    // log(`找到有效路径: ${resolvedPath}`);
+                    break;
+                }
+            }
+
+            if (!fs.existsSync(resolvedPath)) {
+                log(`警告: 无法解析路径 ${resolvedPath}`);
+                this.resolvedPathCache.set(cacheKey, null);
+                return null;
             }
         }
 
         // 确保使用正确的路径分隔符
         resolvedPath = path.normalize(resolvedPath).replace(/\\/g, '/');
 
-        // 检查文件是否存在
-        if (!fs.existsSync(resolvedPath)) {
-            log(`警告: 无法找到文件 ${resolvedPath}`);
-            this.resolvedPathCache.set(cacheKey, null);
-            return null;
-        }
-
+        // log(`最终解析的路径: ${resolvedPath}`);
+        
         const result = vscode.Uri.file(resolvedPath);
         this.resolvedPathCache.set(cacheKey, result);
         return result;
@@ -696,9 +829,11 @@ export class AngularParser {
         }
         const workspaceFolder = vscode.workspace.getWorkspaceFolder(documentUri);
         if (workspaceFolder) {
+            log(`使用工作区文件夹路径: ${workspaceFolder.uri.fsPath}`);
             return workspaceFolder.uri.fsPath;
         }
         // 如果找不到工作区文件夹，使用文档所在目录作为基准
+        log(`未找到工作区文件夹，使用文档目录: ${path.dirname(documentUri.fsPath)}`);
         return path.dirname(documentUri.fsPath);
     }
 
@@ -762,19 +897,13 @@ export class AngularParser {
         return this.jsToHtmlMap.get(jsFilePath) || [];
     }
 
-    private shouldIgnoreFolder(folderPath: string): boolean {
-        return this.ignorePatterns.some(pattern => {
-            const regex = new RegExp(`(^|/)${this.convertGlobToRegExp(pattern)}(/|$)`);
-            return regex.test(folderPath);
-        });
-    }
-
     // 添加这个新方法来检查文件是否存在
     private async fileExists(fileUri: vscode.Uri): Promise<boolean> {
         try {
             await vscode.workspace.fs.stat(fileUri);
             return true;
-        } catch {            return false;
+        } catch {           
+             return false;
         }
     }
 
@@ -934,5 +1063,29 @@ export class AngularParser {
             logError(`更新JavaScript文件索引时出错 ${filePath}:`, error);
             throw error;
         }
+    }
+
+    public getFileContent(filePath: string): string | undefined {
+        try {
+            return fs.readFileSync(filePath, 'utf8');
+        } catch (error) {
+            logError(`读取文件内容时出错 ${filePath}:`, error);
+            return undefined;
+        }
+    }
+
+    public getPositionLocation(filePath: string, position: number): vscode.Position {
+        const content = this.getFileContent(filePath);
+        if (!content) return new vscode.Position(0, 0);
+
+        const lines = content.split('\n');
+        let currentPosition = 0;
+        for (let i = 0; i < lines.length; i++) {
+            currentPosition += lines[i].length + 1; // +1 for the newline character
+            if (currentPosition > position) {
+                return new vscode.Position(i, position - (currentPosition - lines[i].length - 1));
+            }
+        }
+        return new vscode.Position(lines.length - 1, 0);
     }
 }
