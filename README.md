@@ -64,10 +64,6 @@ Angular 助手扩展是一个为 Visual Studio Code 设计的工具,旨在提高
 - **默认值**：100
 - **说明**：增加这个值可以提高频繁访问的定义的查找速度,但会占用更多内存。
 
-### `angularHelper.enablePerformanceLogging`
-- **描述**：是否启用性能日志记录。
-- **默认值**：false
-- **说明**：启用此选项后,扩展会在输出面板中记录各种操作的性能数据。
 
 ### `angularHelper.enableLogging`
 - **描述**：是否启用普通日志记录。

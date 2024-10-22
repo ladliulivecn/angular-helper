@@ -52,11 +52,6 @@
           "description": "定义查找结果的缓存条目数。增加此值可以提高重复查询的速度，但会占用更多内存。设置为 0 可以禁用缓存。",
           "minimum": 0
         },
-        "angularHelper.enablePerformanceLogging": {
-          "type": "boolean",
-          "default": false,
-          "description": "启用性能日志记录。启用后，将记录定义查找的性能数据。"
-        },
         "angularHelper.enableLogging": {
           "type": "boolean",
           "default": true,
@@ -90,6 +85,16 @@
           "default": 1000,
           "description": "已解析路径的缓存大小。增加此值可以提高性能，但会占用更多内存。"
         },
+        "angularHelper.debugAssociations": {
+          "type": "boolean",
+          "default": false,
+          "description": "是否启用关联文件的日志调试。"
+        },
+        "angularHelper.debugFindDefinitionAndReference": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否启用查找定义和引用的日志调试。"
+        },
         "angularHelper.resolvedPathCacheTTL": {
           "type": "number",
           "default": 3600000,
@@ -97,12 +102,7 @@
         }
       }
     },
-    "commands": [
-      {
-        "command": "angularHelper.outputPerformanceReport",
-        "title": "Angular Helper: Output Performance Report"
-      }
-    ]
+    "commands": []
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
