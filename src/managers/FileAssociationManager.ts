@@ -1,8 +1,8 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { HtmlParser } from '../parsers/HtmlParser';
-import { FileUtils } from '../utils/FileUtils';
 import { JavaScriptParser } from '../parsers/JavaScriptParser';
+import { FileUtils } from '../utils/FileUtils';
 import { FileInfoManager } from './FileInfoManager';
 
 export class FileAssociationManager {

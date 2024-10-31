@@ -1,14 +1,14 @@
 /* eslint-disable curly */
-import * as vscode from 'vscode';
 import * as fs from 'fs';
-import { FileUtils } from './utils/FileUtils';
-import { FileInfoManager } from './managers/FileInfoManager';
-import { FileAssociationManager } from './managers/FileAssociationManager';
-import { JavaScriptParser } from './parsers/JavaScriptParser';
-import { HtmlParser } from './parsers/HtmlParser';
-import { PathResolver } from './utils/PathResolver';
-import { FileInfo, SUPPORTED_LANGUAGES } from './types/types';
 import * as path from 'path';
+import * as vscode from 'vscode';
+import { FileAssociationManager } from './managers/FileAssociationManager';
+import { FileInfoManager } from './managers/FileInfoManager';
+import { HtmlParser } from './parsers/HtmlParser';
+import { JavaScriptParser } from './parsers/JavaScriptParser';
+import { FileInfo, SUPPORTED_LANGUAGES } from './types/types';
+import { FileUtils } from './utils/FileUtils';
+import { PathResolver } from './utils/PathResolver';
 
 
 
@@ -90,6 +90,21 @@ export class AngularParser {
             return;
         }
 
+        // 检查文件是否已经被解析过且未修改
+        const fileInfo = this.fileInfoManager.getFileInfo(filePath);
+        if (fileInfo) {
+            try {
+                const stat = await vscode.workspace.fs.stat(file);
+                const cachedStat = await vscode.workspace.fs.stat(vscode.Uri.file(fileInfo.filePath));
+                if (stat.mtime === cachedStat.mtime) {
+                    FileUtils.log(`使用缓存的文件解析结果: ${filePath}`);
+                    return;
+                }
+            } catch (error) {
+                FileUtils.logError(`获取文件状态失败: ${filePath}`, error);
+            }
+        }
+
         this.parsingFiles.add(filePath);
 
         try {
@@ -106,11 +121,10 @@ export class AngularParser {
                 this.fileAssociationManager.clearAssociationsForFile(filePath);
                 this.fileAssociationManager.setAssociation(filePath, associatedJsFiles);
                 
+                // 直接解析关联的 JS 文件，因为 FileAssociationManager 已经处理了去重
                 for (const jsFile of associatedJsFiles) {
                     await this.parseFile(vscode.Uri.file(jsFile));
                 }
-            } else {
-                FileUtils.log(`不支持的文件类型: ${document.languageId}, 文件: ${filePath}`);
             }
         } finally {
             this.parsingFiles.delete(filePath);
@@ -121,17 +135,17 @@ export class AngularParser {
         if (['html', 'javascript'].includes(document.languageId)) {
             await this.parseFile(document.uri);
 
-            if (document.languageId === 'html') {
-                const associatedJsFiles = this.fileAssociationManager.getAssociatedJsFiles(document.fileName);
-                for (const jsFile of associatedJsFiles) {
-                    const jsUri = vscode.Uri.file(jsFile);
-                    await this.parseFile(jsUri);
+            if (document.languageId === SUPPORTED_LANGUAGES.HTML) {
+                // FileAssociationManager 已经处理了去重
+                const jsFiles = this.fileAssociationManager.getAssociatedJsFiles(document.fileName);
+                for (const jsFile of jsFiles) {
+                    await this.parseFile(vscode.Uri.file(jsFile));
                 }
-            } else if (document.languageId === 'javascript') {
-                const associatedHtmlFiles = this.fileAssociationManager.getAssociatedHtmlFiles(document.fileName);
-                for (const htmlFile of associatedHtmlFiles) {
-                    const htmlUri = vscode.Uri.file(htmlFile);
-                    await this.parseFile(htmlUri);
+            } else if (document.languageId === SUPPORTED_LANGUAGES.JAVASCRIPT) {
+                // FileAssociationManager 已经处理了去重
+                const htmlFiles = this.fileAssociationManager.getAssociatedHtmlFiles(document.fileName);
+                for (const htmlFile of htmlFiles) {
+                    await this.parseFile(vscode.Uri.file(htmlFile));
                 }
             }
         }
