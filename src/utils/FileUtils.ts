@@ -13,9 +13,8 @@ export class FileUtils {
         if (vscode.workspace.getConfiguration('angularHelper').get<boolean>('enableLogging', true)) {
             if (this.outputChannel) {
                 this.outputChannel.appendLine(`[${new Date().toLocaleString()}] ${message}`);
-            } else {
-                console.log(`[AngularHelper] ${message}`);
             }
+            console.log(`[AngularHelper] ${message}`);
         }
     }
 
@@ -29,9 +28,8 @@ export class FileUtils {
             const errorMessage = error instanceof Error ? error.stack || error.message : String(error);
             if (this.outputChannel) {
                 this.outputChannel.appendLine(`[${new Date().toLocaleString()}] ERROR: ${message}\n${errorMessage}`);
-            } else {
-                console.error(`[AngularHelper] ERROR: ${message}`, error);
             }
+            console.error(`[AngularHelper] ERROR: ${message}`, error);
         }
     }
     /**

@@ -37,9 +37,16 @@ export async function activate(context: vscode.ExtensionContext) {
 
 		registerProviders();
 
-		// 注册 ReferenceProvider
+		// 注册 ReferenceProvider，使用更明确的语言标识
 		context.subscriptions.push(
-			vscode.languages.registerReferenceProvider(['html', 'javascript'], referenceProvider)
+			vscode.languages.registerReferenceProvider(
+				[
+					{ scheme: 'file', language: 'html' },
+					{ scheme: 'file', language: 'javascript' },
+					{ scheme: 'file', language: 'js' }  // 添加 'js' 语言标识
+				],
+				referenceProvider
+			)
 		);
 
 		context.subscriptions.push(...disposables);
@@ -90,8 +97,18 @@ export async function activate(context: vscode.ExtensionContext) {
  * 这个函数注册了定义提供者和各种事件监听器。
  */
 function registerProviders() {
+	// 注册 DefinitionProvider，使用更明确的语言标识
 	disposables.push(
-		vscode.languages.registerDefinitionProvider(['html'], definitionProvider!),
+		vscode.languages.registerDefinitionProvider(
+			[
+				{ scheme: 'file', language: 'html' },
+				{ scheme: 'file', language: 'javascript' },
+				{ scheme: 'file', language: 'js' }  // 添加 'js' 语言标识
+			],
+			definitionProvider!
+		),
+		
+		// 其他事件监听器保持不变
 		vscode.workspace.onDidChangeTextDocument(async event => {
 			if (['html'].includes(event.document.languageId) && angularParser) {
 				try {
@@ -142,9 +159,16 @@ async function handleConfigChange(e: vscode.ConfigurationChangeEvent) {
 		// 重新注册 providers
 		registerProviders();
 
-		// 重新注册 ReferenceProvider
+		// 重新注册 ReferenceProvider，使用更明确的语言标识
 		disposables.push(
-			vscode.languages.registerReferenceProvider(['html', 'javascript'], referenceProvider)
+			vscode.languages.registerReferenceProvider(
+				[
+					{ scheme: 'file', language: 'html' },
+					{ scheme: 'file', language: 'javascript' },
+					{ scheme: 'file', language: 'js' }  // 添加 'js' 语言标识
+				],
+				referenceProvider
+			)
 		);
 
 		// 重新初始化解析器
@@ -185,7 +209,7 @@ async function initializeParser() {
 		const config = vscode.workspace.getConfiguration('angularHelper');
 		const ignorePatterns = config.get<string[]>('ignorePatterns') || [];
 		const fileUris = await vscode.workspace.findFiles('**/*.{html}', `{${ignorePatterns.join(',')}}`, undefined, cancelTokenSource.token);
-		
+		FileUtils.log(`忽略的文件模式: ${ignorePatterns.join(',')}`);
 		FileUtils.log(`开始初始化解析器，共找到 ${fileUris.length} 个文件`);
 
 		if (angularParser) {

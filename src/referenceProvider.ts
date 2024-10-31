@@ -1,18 +1,18 @@
 import * as vscode from 'vscode';
 import { AngularParser } from './angularParser';
-import { SUPPORTED_LANGUAGES } from './types/types';
+import { SUPPORTED_LANGUAGES, FileInfo } from './types/types';
 import { FileUtils } from './utils/FileUtils';
 
 export class ReferenceProvider implements vscode.ReferenceProvider {
     constructor(private angularParser: AngularParser) {}
 
-    public provideReferences(
+    public async provideReferences(
         document: vscode.TextDocument,
         position: vscode.Position,
-    ): vscode.ProviderResult<vscode.Location[]> {
+    ): Promise<vscode.Location[]> {
         const wordRange = document.getWordRangeAtPosition(position);
         if (!wordRange) {
-            return undefined;
+            return [];
         }
 
         const word = document.getText(wordRange);
@@ -21,23 +21,32 @@ export class ReferenceProvider implements vscode.ReferenceProvider {
         const references = new Map<string, vscode.Location>();
 
         // 在当前文件中查找引用
-        this.findReferencesInFile(document, word, references);
+        const currentFileInfo = this.angularParser.getFileInfo(document.uri.fsPath);
+        if (currentFileInfo) {
+            this.findReferencesInFileInfo(currentFileInfo, document.uri, word, references);
+        } else {
+            FileUtils.log(`当前文件未解析: ${document.fileName}`);
+        }
 
         // 在关联的文件中查找引用
         if (document.languageId === SUPPORTED_LANGUAGES.JAVASCRIPT) {
-            const associatedHtmlFiles = this.angularParser.getAssociatedHtmlFiles(document.uri.fsPath);
-            for (const htmlFile of associatedHtmlFiles) {
-                const htmlDocument = vscode.workspace.textDocuments.find(doc => doc.uri.fsPath === htmlFile);
-                if (htmlDocument) {
-                    this.findReferencesInFile(htmlDocument, word, references);
+            const htmlFiles = this.angularParser.getAssociatedHtmlFiles(document.uri.fsPath);
+            for (const htmlFile of htmlFiles) {
+                const fileInfo = this.angularParser.getFileInfo(htmlFile);
+                if (fileInfo) {
+                    this.findReferencesInFileInfo(fileInfo, vscode.Uri.file(htmlFile), word, references);
+                } else {
+                    FileUtils.logDebugForFindDefinitionAndReference(`关联的HTML文件未解析: ${htmlFile}`);
                 }
             }
         } else if (document.languageId === SUPPORTED_LANGUAGES.HTML) {
-            const associatedJsFiles = this.angularParser.getAssociatedJsFiles(document.uri.fsPath);
-            for (const jsFile of associatedJsFiles) {
-                const jsDocument = vscode.workspace.textDocuments.find(doc => doc.uri.fsPath === jsFile);
-                if (jsDocument) {
-                    this.findReferencesInFile(jsDocument, word, references);
+            const jsFiles = this.angularParser.getAssociatedJsFiles(document.uri.fsPath);
+            for (const jsFile of jsFiles) {
+                const fileInfo = this.angularParser.getFileInfo(jsFile);
+                if (fileInfo) {
+                    this.findReferencesInFileInfo(fileInfo, vscode.Uri.file(jsFile), word, references);
+                } else {
+                    FileUtils.logDebugForFindDefinitionAndReference(`关联的JS文件未解析: ${jsFile}`);
                 }
             }
         }
@@ -47,42 +56,22 @@ export class ReferenceProvider implements vscode.ReferenceProvider {
         return uniqueReferences;
     }
 
-    private findReferencesInFile(document: vscode.TextDocument, word: string, references: Map<string, vscode.Location>): void {
-        const fileInfo = this.angularParser.getFileInfo(document.uri.fsPath);
-        if (!fileInfo) {
-            return;
-        }
-
-        const functionReferences = fileInfo.functions.get(word);
-        if (functionReferences) {
-            for (const ref of functionReferences) {
+    private findReferencesInFileInfo(
+        fileInfo: FileInfo, 
+        uri: vscode.Uri,
+        word: string, 
+        references: Map<string, vscode.Location>
+    ): void {
+        const functionRefs = fileInfo.functions.get(word);
+        if (functionRefs) {
+            for (const ref of functionRefs) {
                 if (!ref.isDefinition) {  // 只添加非定义的引用
-                    const refPosition = this.angularParser.getPositionLocation(document.uri.fsPath, ref.position);
-                    const key = `${document.uri.fsPath}:${refPosition.line}:${refPosition.character}`;
+                    const refPosition = this.angularParser.getPositionLocation(fileInfo.filePath, ref.position);
+                    const range = new vscode.Range(refPosition, refPosition.translate(0, word.length));
+                    const key = `${uri.fsPath}:${refPosition.line}:${refPosition.character}`;
                     if (!references.has(key)) {
-                        references.set(key, new vscode.Location(document.uri, refPosition));
-                        FileUtils.logDebugForFindDefinitionAndReference(`找到 ${word} 的引用，位置: ${document.uri.fsPath}, 行 ${refPosition.line + 1}, 列 ${refPosition.character + 1}`);
-                    }
-                }
-            }
-        }
-
-        // 检查 HTML 文件中的 ng-* 属性
-        if (document.languageId === SUPPORTED_LANGUAGES.HTML) {
-            const content = document.getText();
-            const ngAttributeRegex = new RegExp(`ng-\\w+\\s*=\\s*["'].*?${word}\\s*\\(.*?["']`, 'g');
-            let match;
-            while ((match = ngAttributeRegex.exec(content)) !== null) {
-                const functionCallIndex = match[0].indexOf(word);
-                if (functionCallIndex !== -1) {
-                    const functionCallPosition = document.positionAt(match.index + functionCallIndex);
-                    const key = `${document.uri.fsPath}:${functionCallPosition.line}:${functionCallPosition.character}`;
-                    if (!references.has(key)) {
-                        references.set(key, new vscode.Location(
-                            document.uri,
-                            new vscode.Range(functionCallPosition, functionCallPosition.translate(0, word.length))
-                        ));
-                        FileUtils.logDebugForFindDefinitionAndReference(`找到 ${word} 的 ng-* 属性引用，位置: ${document.uri.fsPath}, 行 ${functionCallPosition.line + 1}, 列 ${functionCallPosition.character + 1}`);
+                        references.set(key, new vscode.Location(uri, range));
+                        FileUtils.logDebugForFindDefinitionAndReference(`找到 ${word} 的引用，位置: ${uri.fsPath}, 行 ${refPosition.line + 1}, 列 ${refPosition.character + 1}`);
                     }
                 }
             }

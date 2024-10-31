@@ -95,7 +95,7 @@ export class AngularParser {
                 const stat = await vscode.workspace.fs.stat(file);
                 const cachedStat = await vscode.workspace.fs.stat(vscode.Uri.file(fileInfo.filePath));
                 if (stat.mtime === cachedStat.mtime) {
-                    FileUtils.log(`使用缓存的文件解析结果: ${filePath}`);
+                    FileUtils.logDebugForAssociations(`使用缓存的文件解析结果: ${filePath}`);
                     return;
                 }
             } catch (error) {
@@ -166,7 +166,7 @@ export class AngularParser {
                 throw new Error(`不支持的文件类型: ${fileExtension}, 文件: ${absolutePath}`);
             }
 
-            FileUtils.log(`文件索引更新完成: ${absolutePath}`);
+            FileUtils.logDebugForAssociations(`文件索引更新完成: ${absolutePath}`);
         } catch (error) {
             FileUtils.logError(`更新文件索引时出错 ${absolutePath}:`, error);
             throw error;

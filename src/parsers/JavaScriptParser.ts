@@ -1,5 +1,5 @@
-import * as vscode from 'vscode';
 import * as ts from 'typescript';
+import * as vscode from 'vscode';
 import { FileInfo } from '../types/types';
 import { FileUtils } from '../utils/FileUtils';
 

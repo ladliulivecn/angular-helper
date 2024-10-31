@@ -20,22 +20,7 @@
   "contributes": {
     "configuration": {
       "title": "Angular Helper",
-      "properties": {
-        "angularDefinitionProvider.excludePatterns": {
-          "type": "array",
-          "default": [
-            ".git/**",
-            ".history/**",
-            ".idea/**",
-            ".vscode/**",
-            "doc/**",
-            "node_modules/**",
-            "dist/**",
-            "out/**",
-            ".vscode-test/**"
-          ],
-          "description": "用于排除解析的文件或文件夹的数组。"
-        },
+      "properties": {        
         "angularDefinitionProvider.maxConcurrentParsing": {
           "type": "number",
           "default": 5,
@@ -81,7 +66,11 @@
             ".history/**",
             ".idea/**",
             ".vscode/**",
-            "doc/**"
+            "doc/**",
+            "node_modules/**",
+            "dist/**",
+            "out/**",
+            ".vscode-test/**"
           ],
           "description": "要忽略的文件、文件夹和脚本模式"
         },
