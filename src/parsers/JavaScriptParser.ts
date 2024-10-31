@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as ts from 'typescript';
-import { FileInfo, AngularDefinition } from '../types/types';
+import { FileInfo } from '../types/types';
 import { FileUtils } from '../utils/FileUtils';
 
 export class JavaScriptParser {

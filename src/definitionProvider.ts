@@ -8,8 +8,7 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 
     public async provideDefinition(
         document: vscode.TextDocument,
-        position: vscode.Position,
-        token: vscode.CancellationToken
+        position: vscode.Position,        
     ): Promise<vscode.Location | vscode.Location[] | vscode.LocationLink[] | undefined> {
         const wordRange = document.getWordRangeAtPosition(position);
         if (!wordRange) {

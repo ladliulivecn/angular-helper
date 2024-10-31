@@ -129,14 +129,6 @@ export class FileAssociationManager {
         }
     }
 
-    public updateConfiguration(config: vscode.WorkspaceConfiguration): void {
-        // 如果有特定于 FileAssociationManager 的配置，可以在这里更新
-        // 例如，可以清除现有的关联并重新构建
-        // this.htmlToJsMap.clear();
-        // this.jsToHtmlMap.clear();
-        // 可能需要重新分析所有文件来重建关联
-    }
-
     public setAssociation(htmlFilePath: string, jsFilePaths: string[]): void {
         this.htmlToJsMap.set(htmlFilePath, jsFilePaths);
         for (const jsFilePath of jsFilePaths) {

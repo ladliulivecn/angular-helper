@@ -6,21 +6,15 @@ import { PathResolver } from '../utils/PathResolver';
 import { JavaScriptParser } from './JavaScriptParser';
 
 export class HtmlParser {
-    private config !: vscode.WorkspaceConfiguration;
     private pathResolver: PathResolver;
     private jsParser: JavaScriptParser;
     private parsingFiles: Set<string> = new Set();
 
-    constructor(config: vscode.WorkspaceConfiguration, pathResolver: PathResolver) {
-        this.updateConfiguration(config);
+    constructor(pathResolver: PathResolver) {
+        
         this.pathResolver = pathResolver;
         this.jsParser = new JavaScriptParser();
     }
-
-    public updateConfiguration(config: vscode.WorkspaceConfiguration): void {
-        this.config = config;
-    }
-
     public async parseHtmlFile(document: vscode.TextDocument): Promise<{ fileInfo: FileInfo, associatedJsFiles: string[] }> {
         const filePath = document.uri.fsPath;
         if (this.parsingFiles.has(filePath)) {
@@ -178,7 +172,7 @@ export class HtmlParser {
             this.extractFilterReferences(document, expression, fileInfo, startIndex);
         }
 
-        // 解析其他 ng-* 指令中的表达式
+        // 解析其他 ng-* 指令中��表达式
         const directiveRegex = /ng-(if|show|hide|class|style)\s*=\s*["'](.+?)["']/g;
         while ((match = directiveRegex.exec(content)) !== null) {
             const expression = match[2];

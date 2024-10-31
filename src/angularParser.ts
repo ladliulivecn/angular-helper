@@ -23,7 +23,6 @@ export class AngularParser {
     private jsParser: JavaScriptParser;
     private htmlParser: HtmlParser;
     private pathResolver: PathResolver;
-    private mockWorkspacePath: string | null = null;
     private parseQueue: vscode.Uri[] = [];
     private isParsingQueue = false;
     private maxConcurrentParsing: number;
@@ -33,7 +32,7 @@ export class AngularParser {
         const config = vscode.workspace.getConfiguration('angularHelper');
         this.pathResolver = new PathResolver(config);
         this.fileInfoManager = new FileInfoManager(config);
-        this.htmlParser = new HtmlParser(config, this.pathResolver);
+        this.htmlParser = new HtmlParser(this.pathResolver);
         this.jsParser = new JavaScriptParser();
         this.fileAssociationManager = new FileAssociationManager(this.htmlParser, this.jsParser, this.fileInfoManager);
         this.maxConcurrentParsing = config.get<number>('maxConcurrentParsing') || 5;
@@ -44,7 +43,6 @@ export class AngularParser {
      * @param mockPath 模拟的工作区路径
      */
     public setMockWorkspacePath(mockPath: string | null): void {
-        this.mockWorkspacePath = mockPath;
         this.pathResolver.setMockWorkspacePath(mockPath);
     }
 
@@ -258,9 +256,7 @@ export class AngularParser {
     public updateConfiguration(config: vscode.WorkspaceConfiguration): void {
         this.maxConcurrentParsing = config.get<number>('maxConcurrentParsing') || 5;
         this.pathResolver.updateConfiguration(config);
-        this.fileInfoManager.updateConfiguration(config);
-        this.htmlParser.updateConfiguration(config);
-        this.fileAssociationManager.updateConfiguration(config);
+        this.fileInfoManager.updateConfiguration(config);        
         // 如果 JavaScriptParser 需要配置更新，也可以在这里添加
         // this.jsParser.updateConfiguration(config);
     }

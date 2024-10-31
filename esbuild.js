@@ -1,56 +1,42 @@
-const esbuild = require("esbuild");
-
+const esbuild = require('esbuild');
 const production = process.argv.includes('--production');
-const watch = process.argv.includes('--watch');
 
-/**
- * @type {import('esbuild').Plugin}
- */
-const esbuildProblemMatcherPlugin = {
-	name: 'esbuild-problem-matcher',
-
-	setup(build) {
-		build.onStart(() => {
-			console.log('[watch] build started');
-		});
-		build.onEnd((result) => {
-			result.errors.forEach(({ text, location }) => {
-				console.error(`✘ [ERROR] ${text}`);
-				console.error(`    ${location.file}:${location.line}:${location.column}:`);
-			});
-			console.log('[watch] build finished');
-		});
-	},
-};
-
-async function main() {
-	const ctx = await esbuild.context({
-		entryPoints: [
-			'src/extension.ts'
-		],
+async function build() {
+	const result = await esbuild.build({
+		entryPoints: ['./src/extension.ts'],
 		bundle: true,
-		format: 'cjs',
+		outfile: 'dist/extension.js',
+		external: [
+			'vscode',
+			'typescript',
+			'path',
+			'fs',
+			'util'
+		],
+		platform: 'node',
+		target: 'node16',
 		minify: production,
 		sourcemap: !production,
-		sourcesContent: false,
-		platform: 'node',
-		outfile: 'dist/extension.js',
-		external: ['vscode'],
-		logLevel: 'silent',
-		plugins: [
-			/* add to the end of plugins array */
-			esbuildProblemMatcherPlugin,
-		],
+		treeShaking: true,
+		format: 'cjs',
+		define: {
+			'process.env.NODE_ENV': production ? '"production"' : '"development"'
+		},
+		metafile: true,
+		mainFields: ['module', 'main'],
+		bundle: true,
+		logLevel: 'info',
+		drop: production ? ['console', 'debugger'] : [],
+		pure: production ? ['console.log', 'console.info', 'console.debug', 'console.trace'] : [],
 	});
-	if (watch) {
-		await ctx.watch();
-	} else {
-		await ctx.rebuild();
-		await ctx.dispose();
+
+	if (production) {
+		const text = await esbuild.analyzeMetafile(result.metafile);
+		console.log('构建分析:\n' + text);
 	}
 }
 
-main().catch(e => {
-	console.error(e);
+build().catch((err) => {
+	console.error('构建失败:', err);
 	process.exit(1);
 });

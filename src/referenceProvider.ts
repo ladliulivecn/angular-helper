@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { AngularParser } from './angularParser';
-import { FileUtils } from './utils/FileUtils';
 import { SUPPORTED_LANGUAGES } from './types/types';
+import { FileUtils } from './utils/FileUtils';
 
 export class ReferenceProvider implements vscode.ReferenceProvider {
     constructor(private angularParser: AngularParser) {}
@@ -9,8 +9,6 @@ export class ReferenceProvider implements vscode.ReferenceProvider {
     public provideReferences(
         document: vscode.TextDocument,
         position: vscode.Position,
-        context: vscode.ReferenceContext,
-        token: vscode.CancellationToken
     ): vscode.ProviderResult<vscode.Location[]> {
         const wordRange = document.getWordRangeAtPosition(position);
         if (!wordRange) {

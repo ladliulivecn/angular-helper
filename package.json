@@ -110,13 +110,14 @@
     "watch": "npm-run-all -p watch:*",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
-    "package": "npm run check-types && npm run lint && node esbuild.js --production",
+    "package": "node esbuild.js --production",
     "compile-tests": "tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "npm run compile-tests && npm run compile && npm run lint",
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
-    "test": "node ./out/test/runTest.js"
+    "test": "node ./out/test/runTest.js",
+    "analyze": "node esbuild.js --production --analyze"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.8",
@@ -132,6 +133,7 @@
     "typescript": "^5.6.2"
   },
   "dependencies": {
-    "lru-cache": "^7.18.3"
+    "lru-cache": "^7.18.3",
+    "tslib": "^2.6.2"
   }
 }

@@ -27,10 +27,7 @@ suite('Angular Helper Extension Test Suite', () => {
         const mockWorkspacePath = path.join(__dirname, '../../');
         angularParser.setMockWorkspacePath(mockWorkspacePath);
         // 设置模拟的 OutputChannel
-        setOutputChannel(mockOutputChannel as any as vscode.OutputChannel);
-        
-        // 检查工作区路径是否正确设置
-        assert.strictEqual(angularParser['mockWorkspacePath'], mockWorkspacePath, '工作区路径设置不正确');
+        setOutputChannel(mockOutputChannel as any as vscode.OutputChannel);        
     });
 
     test('HTML 解析 - Script 标签和 ng-* 属性', async () => {
@@ -75,14 +72,14 @@ suite('Angular Helper Extension Test Suite', () => {
                 FileUtils.log(`找到函数 ${func} 的定义`);
                 FileUtils.log(`定义位置: ${htmlUri.fsPath}, 行 ${definitionPosition.line + 1}, 列 ${definitionPosition.character + 1}`);
 
-                const foundDefinition = await definitionProvider.provideDefinition(htmlDocument, definitionPosition, null as any);
+                const foundDefinition = await definitionProvider.provideDefinition(htmlDocument, definitionPosition);
                 assert.notStrictEqual(foundDefinition, undefined, `应该找到 ${func} 的定义`);
                 assert.ok(foundDefinition instanceof vscode.Location, `${func} 的定义应该是 Location 类型`);
             }
 
             // 测试引用查找
             const referencePosition = angularParser.getPositionLocation(htmlUri.fsPath, htmlFunction.position);
-            const references = await referenceProvider.provideReferences(htmlDocument, referencePosition, { includeDeclaration: false }, null as any);
+            const references = await referenceProvider.provideReferences(htmlDocument, referencePosition);
 
             if (references && references.length > 0) {
                 FileUtils.log(`函数 ${func} 的所有引用:`);
