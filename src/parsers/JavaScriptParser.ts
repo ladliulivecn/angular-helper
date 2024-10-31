@@ -47,6 +47,8 @@ export class JavaScriptParser {
     private parseNode(node: ts.Node, fileInfo: FileInfo, document: vscode.TextDocument): void {
         if (ts.isExpressionStatement(node)) {
             this.handleExpressionStatement(fileInfo, node, document);
+        } else if (ts.isCallExpression(node)) {
+            this.handleCallExpression(fileInfo, node, document);
         }
 
         ts.forEachChild(node, child => this.parseNode(child, fileInfo, document));
@@ -115,5 +117,36 @@ export class JavaScriptParser {
             type: 'variable',
             isDefinition: false
         });
+    }
+
+    private handleCallExpression(fileInfo: FileInfo, node: ts.CallExpression, document: vscode.TextDocument) {
+        if (ts.isPropertyAccessExpression(node.expression) && 
+            ts.isIdentifier(node.expression.expression) &&
+            node.expression.expression.text === 'app' &&
+            ts.isIdentifier(node.expression.name) &&
+            node.expression.name.text === 'filter') {
+
+            if (node.arguments.length >= 1 && ts.isStringLiteral(node.arguments[0])) {
+                const filterName = node.arguments[0].text;
+                const position = document.offsetAt(document.positionAt(node.arguments[0].getStart()));
+
+                if (!fileInfo.filters.has(filterName)) {
+                    fileInfo.filters.set(filterName, []);
+                }
+
+                fileInfo.filters.get(filterName)!.push({
+                    name: filterName,
+                    position,
+                    type: 'filter',
+                    isDefinition: true
+                });
+
+                FileUtils.logDebugForFindDefinitionAndReference(
+                    `找到 filter 定义: ${filterName}, 位置: ${document.fileName}, ` +
+                    `行 ${document.positionAt(position).line + 1}, ` +
+                    `列 ${document.positionAt(position).character + 1}`
+                );
+            }
+        }
     }
 }

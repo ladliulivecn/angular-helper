@@ -117,7 +117,7 @@ suite('Angular Helper Extension Test Suite', () => {
                 assert.notStrictEqual(foundDefinition, undefined, `应该找到 ${func} 的定义`);
                 assert.ok(foundDefinition instanceof vscode.Location, `${func} 的定义应该是 Location 类型`);
             } else {
-                FileUtils.log(`未找到函数 ${func} 的定义，只找到引用`);
+                FileUtils.log(`未找到函数 ${func} 的定义，只找到用`);
                 const reference = jsFunction || htmlFunction;
                 if (reference) {
                     const referenceUri = reference === jsFunction ? jsUri : htmlUri;
@@ -225,7 +225,7 @@ suite('Angular Helper Extension Test Suite', () => {
 
             // 检查变量定义
             const scopeVariable = jsFileInfo.scopeVariables.get(varName);
-            assert.ok(scopeVariable, `${varName} 变量应该在 scopeVariables 中有定义`);
+            assert.ok(scopeVariable, `${varName} 变应该在 scopeVariables 中有定义`);
             assert.ok(scopeVariable.isDefinition, `${varName} 应该被标记为定义`);
 
             // 检查变量在函数中的引用
@@ -261,6 +261,52 @@ suite('Angular Helper Extension Test Suite', () => {
 
             FileUtils.log(`${varName} 变量测试完成`);
         }
+    });
+
+    test('Angular Filter 解析测试', async () => {
+        const htmlUri = vscode.Uri.file(path.join(TEST_FILES_PATH, 'temp2.html'));
+        const jsUri = vscode.Uri.file(path.join(TEST_FILES_PATH, 'temp2.js'));
+
+        // 先解析 JS 文件以获取 filter 定义
+        await angularParser.parseFile(jsUri);
+        // 然后解析 HTML 文件以获取 filter 引用
+        await angularParser.parseFile(htmlUri);
+        
+        const jsFileInfo = angularParser.getFileInfo(jsUri.fsPath);
+        const htmlFileInfo = angularParser.getFileInfo(htmlUri.fsPath);
+        
+        assert.ok(jsFileInfo, 'JS 文件信息应该存在');
+        assert.ok(htmlFileInfo, 'HTML 文件信息应该存在');
+
+        // 检查 filter 定义
+        assert.ok(jsFileInfo.filters.has('timefil'), '应该找到 timefil filter 的定义');
+        
+        const timefilFilters = jsFileInfo.filters.get('timefil');
+        assert.ok(timefilFilters && timefilFilters.length > 0, 'timefil filter 信息应该存在');
+        
+        // 找到定义（应该只有一个定义）
+        const filterDef = timefilFilters!.find(f => f.isDefinition);
+        assert.ok(filterDef, 'timefil filter 应该有一个定义');
+        
+        // 检查 filter 引用
+        const timefilRefs = htmlFileInfo.filters.get('timefil');
+        assert.ok(timefilRefs && timefilRefs.length > 0, 'timefil filter 应该在 HTML 中有引用');
+        // 所有的引用都不应该是定义
+        assert.ok(timefilRefs!.every(ref => !ref.isDefinition), 'HTML 中的 filter 引用不应该被标记为定义');
+
+        // 检查位置信息
+        const filterDefPosition = angularParser.getPositionLocation(jsUri.fsPath, filterDef.position);
+        FileUtils.log(`Filter 定义位置: 行 ${filterDefPosition.line + 1}, 列 ${filterDefPosition.character + 1}`);
+
+        // 检查引用计数
+        FileUtils.log(`Filter 引用数量: ${htmlFileInfo.filters.size}`);
+
+        // 输出所有引用位置以便调试
+        FileUtils.log('Filter 引用位置:');
+        timefilRefs!.forEach((ref, index) => {
+            const loc = angularParser.getPositionLocation(htmlUri.fsPath, ref.position);
+            FileUtils.log(`引用 ${index + 1}: 行 ${loc.line + 1}, 列 ${loc.character + 1}`);
+        });
     });
 
     // TODO: 如果需要，可以在这里添加更多针对 HTML 文件的测试...

@@ -22,7 +22,7 @@ export interface FileInfo {
     ngAttributes: Map<string, AngularDefinition>;
     ngControllers: Map<string, AngularDefinition>;
     ngRepeatVariables: Map<string, NgRepeatExpression>;
-    filters: Map<string, AngularDefinition>;
+    filters: Map<string, AngularDefinition[]>;
 }
 
 /**

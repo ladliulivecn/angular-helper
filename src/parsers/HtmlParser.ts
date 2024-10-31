@@ -97,7 +97,7 @@ export class HtmlParser {
             if (!this.shouldIgnoreReference(functionName)) {
                 const position = document.offsetAt(document.positionAt(startIndex + functionMatch.index));
                 this.addFunctionToFileInfo(fileInfo, functionName, position, false);
-                // FileUtils.logDebugForFindDefinitionAndReference(`在HTML中找到函数或变量引用: ${functionName}, 位置: ${document.uri.fsPath}, 行 ${document.positionAt(position).line + 1}, 列 ${document.positionAt(position).character + 1}`);
+                FileUtils.logDebugForFindDefinitionAndReference(`在HTML中找到函数或变量引用: ${functionName}, 位置: ${document.uri.fsPath}, 行 ${document.positionAt(position).line + 1}, 列 ${document.positionAt(position).character + 1}`);
             }
         }
     }
@@ -160,18 +160,56 @@ export class HtmlParser {
     }
 
     private parseAngularExpressions(document: vscode.TextDocument, content: string, fileInfo: FileInfo): void {
+        // 解析 {{expression}} 中的表达式
         const expressionRegex = /{{(.+?)}}/g;
         let match;
         while ((match = expressionRegex.exec(content)) !== null) {
             const expression = match[1];
             this.extractFunctionReferences(document, expression, fileInfo, match.index + 2);  // +2 to skip {{
+            this.extractFilterReferences(document, expression, fileInfo, match.index + 2);
+        }
 
-            // 解析 ng-if, ng-show, ng-hide 等指令中的表达式
-            const directiveRegex = /ng-(if|show|hide|class|style)\s*=\s*["'](.+?)["']/g;
-            while ((match = directiveRegex.exec(content)) !== null) {
-                const expression = match[2];
-                this.extractFunctionReferences(document, expression, fileInfo, match.index + match[0].indexOf(expression));
+        // 解析 ng-bind 属性中的表达式
+        const ngBindRegex = /ng-bind\s*=\s*["']([^"']+)["']/g;
+        while ((match = ngBindRegex.exec(content)) !== null) {
+            const expression = match[1];
+            const startIndex = match.index + match[0].indexOf(expression);
+            this.extractFunctionReferences(document, expression, fileInfo, startIndex);
+            this.extractFilterReferences(document, expression, fileInfo, startIndex);
+        }
+
+        // 解析其他 ng-* 指令中的表达式
+        const directiveRegex = /ng-(if|show|hide|class|style)\s*=\s*["'](.+?)["']/g;
+        while ((match = directiveRegex.exec(content)) !== null) {
+            const expression = match[2];
+            const startIndex = match.index + match[0].indexOf(expression);
+            this.extractFunctionReferences(document, expression, fileInfo, startIndex);
+        }
+    }
+
+    private extractFilterReferences(document: vscode.TextDocument, expression: string, fileInfo: FileInfo, startIndex: number): void {
+        const filterRegex = /\|\s*(\w+)/g;
+        let filterMatch;
+        while ((filterMatch = filterRegex.exec(expression)) !== null) {
+            const filterName = filterMatch[1];
+            const position = document.offsetAt(document.positionAt(startIndex + filterMatch.index + filterMatch[0].indexOf(filterName)));
+            
+            // 添加 filter 引用
+            if (!fileInfo.filters.has(filterName)) {
+                fileInfo.filters.set(filterName, []);
             }
+            fileInfo.filters.get(filterName)!.push({
+                name: filterName,
+                position,
+                type: 'filter',
+                isDefinition: false
+            });
+
+            FileUtils.logDebugForFindDefinitionAndReference(
+                `找到 filter 引用: ${filterName}, 位置: ${document.fileName}, ` +
+                `行 ${document.positionAt(position).line + 1}, ` +
+                `列 ${document.positionAt(position).character + 1}`
+            );
         }
     }
 }
