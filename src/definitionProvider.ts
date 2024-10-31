@@ -25,17 +25,14 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
             return undefined;
         }
 
-        // 检查是否是函数定义
-        const functionInfo = fileInfo.functions.get(word);
-        if (functionInfo && functionInfo.length > 0) {
-            const definition = functionInfo.find(f => f.isDefinition);
+        // 检查是否是 $scope 函数
+        const scopeFunction = fileInfo.functions.get(word);
+        if (scopeFunction) {
+            const definition = scopeFunction.find(f => f.isDefinition);
             if (definition) {
-                const definitionPosition = this.angularParser.getPositionLocation(document.uri.fsPath, definition.position);
-                FileUtils.logDebugForFindDefinitionAndReference(`找到函数 ${word} 的定义，位置: ${document.uri.fsPath}, 行 ${definitionPosition.line + 1}, 列 ${definitionPosition.character + 1}`);
-                return new vscode.Location(
-                    document.uri,
-                    definitionPosition
-                );
+                const functionPosition = this.angularParser.getPositionLocation(document.uri.fsPath, definition.position);
+                FileUtils.logDebugForFindDefinitionAndReference(`找到 $scope 函数 ${word} 的定义，位置: ${document.uri.fsPath}, 行 ${functionPosition.line + 1}, 列 ${functionPosition.character + 1}`);
+                return new vscode.Location(document.uri, functionPosition);
             }
         }
 
@@ -44,10 +41,7 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
         if (scopeVariable) {
             const variablePosition = this.angularParser.getPositionLocation(document.uri.fsPath, scopeVariable.position);
             FileUtils.logDebugForFindDefinitionAndReference(`找到 $scope 变量 ${word} 的定义，位置: ${document.uri.fsPath}, 行 ${variablePosition.line + 1}, 列 ${variablePosition.character + 1}`);
-            return new vscode.Location(
-                document.uri,
-                variablePosition
-            );
+            return new vscode.Location(document.uri, variablePosition);
         }
 
         // 如果在当前文件中没有找到定义，尝试在关联的文件中查找
@@ -55,16 +49,13 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
         for (const associatedFile of associatedFiles) {
             const associatedFileInfo = this.angularParser.getFileInfo(associatedFile);
             if (associatedFileInfo) {
-                const associatedFunctionInfo = associatedFileInfo.functions.get(word);
-                if (associatedFunctionInfo && associatedFunctionInfo.length > 0) {
-                    const definition = associatedFunctionInfo.find(f => f.isDefinition);
+                const associatedScopeFunction = associatedFileInfo.functions.get(word);
+                if (associatedScopeFunction) {
+                    const definition = associatedScopeFunction.find(f => f.isDefinition);
                     if (definition) {
-                        const definitionPosition = this.angularParser.getPositionLocation(associatedFile, definition.position);
-                        FileUtils.logDebugForFindDefinitionAndReference(`在关联文件中找到函数 ${word} 的定义，位置: ${associatedFile}, 行 ${definitionPosition.line + 1}, 列 ${definitionPosition.character + 1}`);
-                        return new vscode.Location(
-                            vscode.Uri.file(associatedFile),
-                            definitionPosition
-                        );
+                        const functionPosition = this.angularParser.getPositionLocation(associatedFile, definition.position);
+                        FileUtils.logDebugForFindDefinitionAndReference(`在关联文件中找到 $scope 函数 ${word} 的定义，位置: ${associatedFile}, 行 ${functionPosition.line + 1}, 列 ${functionPosition.character + 1}`);
+                        return new vscode.Location(vscode.Uri.file(associatedFile), functionPosition);
                     }
                 }
 
@@ -72,10 +63,7 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
                 if (associatedScopeVariable) {
                     const variablePosition = this.angularParser.getPositionLocation(associatedFile, associatedScopeVariable.position);
                     FileUtils.logDebugForFindDefinitionAndReference(`在关联文件中找到 $scope 变量 ${word} 的定义，位置: ${associatedFile}, 行 ${variablePosition.line + 1}, 列 ${variablePosition.character + 1}`);
-                    return new vscode.Location(
-                        vscode.Uri.file(associatedFile),
-                        variablePosition
-                    );
+                    return new vscode.Location(vscode.Uri.file(associatedFile), variablePosition);
                 }
             }
         }

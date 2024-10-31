@@ -92,7 +92,7 @@
         },
         "angularHelper.debugFindDefinitionAndReference": {
           "type": "boolean",
-          "default": true,
+          "default": false,
           "description": "是否启用查找定义和引用的日志调试。"
         },
         "angularHelper.resolvedPathCacheTTL": {

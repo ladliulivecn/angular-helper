@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as ts from 'typescript';
 import { FileInfo, AngularDefinition } from '../types/types';
+import { FileUtils } from '../utils/FileUtils';
 
 export class JavaScriptParser {
     constructor() {}
@@ -46,8 +47,6 @@ export class JavaScriptParser {
     private parseNode(node: ts.Node, fileInfo: FileInfo, document: vscode.TextDocument): void {
         if (ts.isExpressionStatement(node)) {
             this.handleExpressionStatement(fileInfo, node, document);
-        } else if (ts.isCallExpression(node)) {
-            this.handleCallExpression(fileInfo, node, document);
         }
 
         ts.forEachChild(node, child => this.parseNode(child, fileInfo, document));
@@ -61,32 +60,15 @@ export class JavaScriptParser {
                 const object = left.expression;
                 const property = left.name;
                 if (ts.isIdentifier(object) && ts.isIdentifier(property) && object.text === '$scope') {
+                    const position = document.offsetAt(document.positionAt(property.getStart()));
                     if (ts.isFunctionExpression(right) || ts.isArrowFunction(right)) {
-                        const position = document.offsetAt(document.positionAt(property.getStart()));
                         this.addScopeFunction(fileInfo, property.text, position, true);
+                        FileUtils.logDebugForFindDefinitionAndReference(`找到 $scope 函数定义: ${property.text}, 位置: ${document.fileName}, 行 ${document.positionAt(position).line + 1}, 列 ${document.positionAt(position).character + 1}`);
                     } else {
-                        const position = document.offsetAt(document.positionAt(property.getStart()));
-                        this.addScopeVariable(fileInfo, property.text, position);
+                        this.addScopeVariable(fileInfo, property.text, position, true);
+                        FileUtils.logDebugForFindDefinitionAndReference(`找到 $scope 变量定义: ${property.text}, 位置: ${document.fileName}, 行 ${document.positionAt(position).line + 1}, 列 ${document.positionAt(position).character + 1}`);
                     }
                 }
-            }
-        }
-    }
-
-    private handleCallExpression(fileInfo: FileInfo, node: ts.CallExpression, document: vscode.TextDocument) {
-        if (ts.isPropertyAccessExpression(node.expression)) {
-            const object = node.expression.expression;
-            const property = node.expression.name;
-            if (ts.isIdentifier(object) && ts.isIdentifier(property)) {
-                if (object.text === '$scope') {
-                    const position = document.offsetAt(document.positionAt(property.getStart()));
-                    this.addScopeFunction(fileInfo, property.text, position, false);
-                }
-                // 移除这部分，因为它可能导致错误的引用
-                // else {
-                //     const position = document.offsetAt(document.positionAt(property.getStart()));
-                //     this.addFunctionReference(fileInfo, property.text, position);
-                // }
             }
         }
     }
@@ -103,23 +85,34 @@ export class JavaScriptParser {
         });
     }
 
-    private addScopeVariable(fileInfo: FileInfo, name: string, position: number) {
-        fileInfo.scopeVariables.set(name, {
-            name,
-            position,
-            type: 'variable',
-            isDefinition: true
-        });
-    }
+    private addScopeVariable(fileInfo: FileInfo, name: string, position: number, isDefinition: boolean) {
+        const existingVariable = fileInfo.scopeVariables.get(name);
+        
+        if (existingVariable) {
+            if (isDefinition && position < existingVariable.position) {
+                fileInfo.scopeVariables.set(name, {
+                    name,
+                    position,
+                    type: 'variable',
+                    isDefinition: true
+                });
+            }
+        } else {
+            fileInfo.scopeVariables.set(name, {
+                name,
+                position,
+                type: 'variable',
+                isDefinition
+            });
+        }
 
-    private addFunctionReference(fileInfo: FileInfo, name: string, position: number) {
         if (!fileInfo.functions.has(name)) {
             fileInfo.functions.set(name, []);
         }
         fileInfo.functions.get(name)!.push({
             name,
             position,
-            type: 'function',
+            type: 'variable',
             isDefinition: false
         });
     }

@@ -27,6 +27,7 @@ export class AngularParser {
     private parseQueue: vscode.Uri[] = [];
     private isParsingQueue = false;
     private maxConcurrentParsing: number;
+    private parsingFiles: Set<string> = new Set();
 
     constructor() {
         const config = vscode.workspace.getConfiguration('angularHelper');
@@ -83,25 +84,36 @@ export class AngularParser {
     }
 
     public async parseFile(file: vscode.Uri): Promise<void> {
-        const document = await vscode.workspace.openTextDocument(file);
-        
-        if (document.languageId === SUPPORTED_LANGUAGES.JAVASCRIPT) {
-            const fileInfo = this.jsParser.parseJavaScriptFile(document);
-            this.fileInfoManager.setFileInfo(file.fsPath, fileInfo);
-        } else if (document.languageId === SUPPORTED_LANGUAGES.HTML) {
-            const { fileInfo, associatedJsFiles } = await this.htmlParser.parseHtmlFile(document);
-            this.fileInfoManager.setFileInfo(file.fsPath, fileInfo);
-            
-            // 更新文件关联
-            this.fileAssociationManager.clearAssociationsForFile(file.fsPath);
-            this.fileAssociationManager.setAssociation(file.fsPath, associatedJsFiles);
-            
-            for (const jsFile of associatedJsFiles) {
-                await this.fileAssociationManager.analyzeJsFile(vscode.Uri.file(jsFile));
-            }
-        } else {
-            FileUtils.log(`不支持的文件类型: ${document.languageId}, 文件: ${file.fsPath}`);
+        const filePath = file.fsPath;
+        if (this.parsingFiles.has(filePath)) {
+            FileUtils.log(`跳过正在解析的文件: ${filePath}`);
             return;
+        }
+
+        this.parsingFiles.add(filePath);
+
+        try {
+            const document = await vscode.workspace.openTextDocument(file);
+            
+            if (document.languageId === SUPPORTED_LANGUAGES.JAVASCRIPT) {
+                const fileInfo = this.jsParser.parseJavaScriptFile(document);
+                this.fileInfoManager.setFileInfo(filePath, fileInfo);
+            } else if (document.languageId === SUPPORTED_LANGUAGES.HTML) {
+                const { fileInfo, associatedJsFiles } = await this.htmlParser.parseHtmlFile(document);
+                this.fileInfoManager.setFileInfo(filePath, fileInfo);
+                
+                // 更新文件关联
+                this.fileAssociationManager.clearAssociationsForFile(filePath);
+                this.fileAssociationManager.setAssociation(filePath, associatedJsFiles);
+                
+                for (const jsFile of associatedJsFiles) {
+                    await this.parseFile(vscode.Uri.file(jsFile));
+                }
+            } else {
+                FileUtils.log(`不支持的文件类型: ${document.languageId}, 文件: ${filePath}`);
+            }
+        } finally {
+            this.parsingFiles.delete(filePath);
         }
     }
 

@@ -1,3 +1,4 @@
+/* eslint-disable curly */
 import * as vscode from 'vscode';
 import { FileInfo } from '../types/types';
 import { FileUtils } from '../utils/FileUtils';
@@ -8,6 +9,7 @@ export class HtmlParser {
     private config !: vscode.WorkspaceConfiguration;
     private pathResolver: PathResolver;
     private jsParser: JavaScriptParser;
+    private parsingFiles: Set<string> = new Set();
 
     constructor(config: vscode.WorkspaceConfiguration, pathResolver: PathResolver) {
         this.updateConfiguration(config);
@@ -20,19 +22,32 @@ export class HtmlParser {
     }
 
     public async parseHtmlFile(document: vscode.TextDocument): Promise<{ fileInfo: FileInfo, associatedJsFiles: string[] }> {
-        FileUtils.logDebugForAssociations(`开始解析HTML文件: ${document.uri.fsPath}`);
-        const fileInfo: FileInfo = this.createEmptyFileInfo(document);
-        const content = document.getText();
+        const filePath = document.uri.fsPath;
+        if (this.parsingFiles.has(filePath)) {
+            FileUtils.logDebugForAssociations(`跳过正在解析的HTML文件: ${filePath}`);
+            return { fileInfo: this.createEmptyFileInfo(document), associatedJsFiles: [] };
+        }
 
-        // 首先解析关联的JS文件
-        const associatedJsFiles = await this.parseHtmlForJsFiles(document);
-        FileUtils.logDebugForAssociations(`HTML文件 ${document.uri.fsPath} 关联的JS文件: ${associatedJsFiles.join(', ')}`);
+        this.parsingFiles.add(filePath);
+        FileUtils.logDebugForAssociations(`开始解析HTML文件: ${filePath}`);
 
-        // 然后解析HTML内容
-        this.parseNgAttributes(document, content, fileInfo);
-        this.parseInlineJavaScript(document, content, fileInfo);
+        try {
+            const fileInfo: FileInfo = this.createEmptyFileInfo(document);
+            const content = document.getText();
 
-        return { fileInfo, associatedJsFiles };
+            // 首先解析关联的JS文件
+            const associatedJsFiles = await this.parseHtmlForJsFiles(document);
+            FileUtils.logDebugForAssociations(`HTML文件 ${filePath} 关联的JS文件: ${associatedJsFiles.join(', ')}`);
+
+            // 然后解析HTML内容
+            this.parseNgAttributes(document, content, fileInfo);
+            this.parseInlineJavaScript(document, content, fileInfo);
+            this.parseAngularExpressions(document, content, fileInfo);
+
+            return { fileInfo, associatedJsFiles };
+        } finally {
+            this.parsingFiles.delete(filePath);
+        }
     }
 
     public async parseHtmlForJsFiles(document: vscode.TextDocument): Promise<string[]> {
@@ -61,9 +76,7 @@ export class HtmlParser {
             const directive = match[1];
             const value = match[2];
             
-            if (['click', 'change', 'submit', 'keyup', 'keydown', 'mouseover', 'mouseout'].includes(directive)) {
-                this.extractFunctionReferences(document, value, fileInfo, match.index + match[0].indexOf(value));
-            }
+            this.extractFunctionReferences(document, value, fileInfo, match.index + match[0].indexOf(value));
             
             fileInfo.ngAttributes.set(directive, {
                 name: directive,
@@ -75,6 +88,39 @@ export class HtmlParser {
         }
     }
 
+    private extractFunctionReferences(document: vscode.TextDocument, value: string, fileInfo: FileInfo, startIndex: number): void {
+        const functionNameRegex = /\b([a-zA-Z_$][a-zA-Z0-9_$]*)(?:\s*\(|\s*&&|\s*\|\||\s*\?|\s*:|\s*$)/g;
+        let functionMatch;
+        while ((functionMatch = functionNameRegex.exec(value)) !== null) {
+            const functionName = functionMatch[1];
+            // 忽略数字和 JavaScript 关键字
+            if (!this.shouldIgnoreReference(functionName)) {
+                const position = document.offsetAt(document.positionAt(startIndex + functionMatch.index));
+                this.addFunctionToFileInfo(fileInfo, functionName, position, false);
+                // FileUtils.logDebugForFindDefinitionAndReference(`在HTML中找到函数或变量引用: ${functionName}, 位置: ${document.uri.fsPath}, 行 ${document.positionAt(position).line + 1}, 列 ${document.positionAt(position).character + 1}`);
+            }
+        }
+    }
+
+    private shouldIgnoreReference(name: string): boolean {
+        // 忽略数字
+        if (/^\d+$/.test(name)) return true;
+
+        // 忽略 JavaScript 关键字和常见的全局对象
+        const ignoreList = [
+            'undefined', 'null', 'true', 'false',
+            'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'break',
+            'continue', 'return', 'try', 'catch', 'finally', 'throw',
+            'var', 'let', 'const',
+            'function', 'class',
+            'this', 'super',
+            'Object', 'Array', 'String', 'Number', 'Boolean', 'Function',
+            'Math', 'Date', 'RegExp', 'Error', 'JSON'
+        ];
+
+        return ignoreList.includes(name);
+    }
+
     private parseInlineJavaScript(document: vscode.TextDocument, content: string, fileInfo: FileInfo): void {
         const scriptRegex = /<script\s*>([\s\S]*?)<\/script>/g;
         let match;
@@ -82,16 +128,6 @@ export class HtmlParser {
             const scriptContent = match[1];
             // 使用 JavaScriptParser 来解析内联 JavaScript
             this.jsParser.parseJavaScriptContent(scriptContent, fileInfo, document);
-        }
-    }
-
-    private extractFunctionReferences(document: vscode.TextDocument, value: string, fileInfo: FileInfo, startIndex: number): void {
-        const functionNameRegex = /\b(\w+)\s*\(/g;
-        let functionMatch;
-        while ((functionMatch = functionNameRegex.exec(value)) !== null) {
-            const functionName = functionMatch[1];
-            const position = document.offsetAt(document.positionAt(startIndex + functionMatch.index));
-            this.addFunctionToFileInfo(fileInfo, functionName, position, false);
         }
     }
 
@@ -121,5 +157,21 @@ export class HtmlParser {
             ngRepeatVariables: new Map(),
             filters: new Map()
         };
+    }
+
+    private parseAngularExpressions(document: vscode.TextDocument, content: string, fileInfo: FileInfo): void {
+        const expressionRegex = /{{(.+?)}}/g;
+        let match;
+        while ((match = expressionRegex.exec(content)) !== null) {
+            const expression = match[1];
+            this.extractFunctionReferences(document, expression, fileInfo, match.index + 2);  // +2 to skip {{
+
+            // 解析 ng-if, ng-show, ng-hide 等指令中的表达式
+            const directiveRegex = /ng-(if|show|hide|class|style)\s*=\s*["'](.+?)["']/g;
+            while ((match = directiveRegex.exec(content)) !== null) {
+                const expression = match[2];
+                this.extractFunctionReferences(document, expression, fileInfo, match.index + match[0].indexOf(expression));
+            }
+        }
     }
 }

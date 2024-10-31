@@ -4,8 +4,8 @@ import * as vscode from 'vscode';
 import { AngularParser } from '../angularParser';
 import { DefinitionProvider } from '../definitionProvider';
 import { setOutputChannel } from '../extension';
-import { FileUtils } from '../utils/FileUtils';
 import { ReferenceProvider } from '../referenceProvider';
+import { FileUtils } from '../utils/FileUtils';
 
 suite('Angular Helper Extension Test Suite', () => {
     let angularParser: AngularParser;
@@ -90,7 +90,7 @@ suite('Angular Helper Extension Test Suite', () => {
             FileUtils.log(`未找到 JS 文件: ${jsUri.fsPath}, 可能 JavaScript 代码在 HTML 文件中`);
         } 
             
-        const functionsToTest = ['selectCost', 'ShowQrcode', 'GotoLearder', 'GotoSign', 'togglePage', 'GotoField'];
+        const functionsToTest = ['isChooseCost', 'GotoLearder', 'GotoSign', 'togglePage', 'GotoField'];
 
         for (const func of functionsToTest) {
             FileUtils.log(`测试函数: ${func}`);
@@ -203,6 +203,64 @@ suite('Angular Helper Extension Test Suite', () => {
         FileUtils.log(`捕获到的 ng-* 属性数量: ${fileInfo.ngAttributes.size}`);
         FileUtils.log(`捕获到的函数引用数量: ${fileInfo.functions.size}`);
         
+    });
+
+    test('变量定义和引用测试', async () => {
+        const htmlUri = vscode.Uri.file(path.join(TEST_FILES_PATH, 'temp2.html'));
+        const jsUri = vscode.Uri.file(path.join(TEST_FILES_PATH, 'temp2.js'));
+
+        await angularParser.parseFile(htmlUri);
+
+        const htmlDocument = await vscode.workspace.openTextDocument(htmlUri);
+        const jsDocument = await vscode.workspace.openTextDocument(jsUri);
+
+        const variablesToTest = ['signList', 'showPage', 'isSummary', 'signField'];
+        const jsFileInfo = angularParser.getFileInfo(jsUri.fsPath);
+        assert.ok(jsFileInfo, 'JS 文件信息应该存在');
+
+        const jsContent = jsDocument.getText();
+
+        for (const varName of variablesToTest) {
+            FileUtils.log(`测试变量: ${varName}`);
+
+            // 检查变量定义
+            const scopeVariable = jsFileInfo.scopeVariables.get(varName);
+            assert.ok(scopeVariable, `${varName} 变量应该在 scopeVariables 中有定义`);
+            assert.ok(scopeVariable.isDefinition, `${varName} 应该被标记为定义`);
+
+            // 检查变量在函数中的引用
+            const functionRefs = jsFileInfo.functions.get(varName) || [];
+            assert.ok(functionRefs.some(ref => !ref.isDefinition), 
+                `${varName} 变量应该在函数中有引用`);
+
+            // 输出日志
+            FileUtils.log(`${varName} 变量定义位置: 行 ${
+                angularParser.getPositionLocation(jsUri.fsPath, scopeVariable.position).line + 1
+            }`);
+            FileUtils.log(`${varName} 变量引用数量: ${functionRefs.length}`);
+
+            // 检查变量在 JS 文件中的使用
+            assert.ok(jsContent.includes(`$scope.${varName}`), 
+                `JS 文件中应该包含 $scope.${varName}`);
+
+            // 检查特定变量的赋值模式
+            if (varName === 'isShow' || varName === 'isShowBack') {
+                assert.ok(jsContent.includes(`$scope.${varName} = true;`), 
+                    `${varName} 变量应该在某处被赋值为 true`);
+            } else if (['url', 'page', 'costType', 'costTypeList'].includes(varName)) {
+                assert.ok(jsContent.includes(`$scope.${varName} = `), 
+                    `${varName} 变量应该有赋值语句`);
+            }
+
+            // 检查 HTML 文件中的引用
+            const htmlContent = htmlDocument.getText();
+            if (varName !== '$scope') {  // $scope 通常不会直接在 HTML 中引用
+                assert.ok(htmlContent.includes(varName), 
+                    `${varName} 变量应该在 HTML 文件中有引用`);
+            }
+
+            FileUtils.log(`${varName} 变量测试完成`);
+        }
     });
 
     // TODO: 如果需要，可以在这里添加更多针对 HTML 文件的测试...
