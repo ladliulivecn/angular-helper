@@ -13,6 +13,7 @@
   "activationEvents": [
     "onLanguage:html",
     "onLanguage:javascript",
+    "onStartupFinished",
     "onLanguage:typescript"
   ],
   "main": "./dist/extension.js",
@@ -27,7 +28,11 @@
             ".history/**",
             ".idea/**",
             ".vscode/**",
-            "doc/**"
+            "doc/**",
+            "node_modules/**",
+            "dist/**",
+            "out/**",
+            ".vscode-test/**"
           ],
           "description": "用于排除解析的文件或文件夹的数组。"
         },

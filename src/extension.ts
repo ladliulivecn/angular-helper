@@ -26,8 +26,9 @@ let cancelTokenSource: vscode.CancellationTokenSource | undefined;
  */
 export async function activate(context: vscode.ExtensionContext) {
 	try {
-		outputChannel = vscode.window.createOutputChannel('Angular Helper');	
-
+		outputChannel = vscode.window.createOutputChannel('Angular Helper');		
+		outputChannel.show(); // 强制显示输出面板
+		FileUtils.initOutputChannel(outputChannel);
 		FileUtils.log('正在激活 Angular 助手扩展...');
 
 		angularParser = new AngularParser();
@@ -69,7 +70,7 @@ export async function activate(context: vscode.ExtensionContext) {
 			}
 		}
 
-		FileUtils.log('Angular 助手扩展已成功激活');
+		FileUtils.log('Angular 助手扩展已成功激活');		
 
 		// 监听配置变化
 		context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {

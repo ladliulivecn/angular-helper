@@ -1,16 +1,18 @@
 import * as vscode from 'vscode';
 
-let outputChannel: vscode.OutputChannel | undefined;
-
 export class FileUtils {
+    private static outputChannel: vscode.OutputChannel | undefined;
+    public static initOutputChannel(outputChannel: vscode.OutputChannel): void {
+        this.outputChannel = outputChannel;
+    }
     /**
      * 记录普通日志信息
      * @param message 日志消息
      */
     public static log(message: string): void {
         if (vscode.workspace.getConfiguration('angularHelper').get<boolean>('enableLogging', true)) {
-            if (outputChannel) {
-                outputChannel.appendLine(`[${new Date().toLocaleString()}] ${message}`);
+            if (this.outputChannel) {
+                this.outputChannel.appendLine(`[${new Date().toLocaleString()}] ${message}`);
             } else {
                 console.log(`[AngularHelper] ${message}`);
             }
@@ -25,8 +27,8 @@ export class FileUtils {
     public static logError(message: string, error: unknown): void {
         if (vscode.workspace.getConfiguration('angularHelper').get<boolean>('enableLogging', true)) {
             const errorMessage = error instanceof Error ? error.stack || error.message : String(error);
-            if (outputChannel) {
-                outputChannel.appendLine(`[${new Date().toLocaleString()}] ERROR: ${message}\n${errorMessage}`);
+            if (this.outputChannel) {
+                this.outputChannel.appendLine(`[${new Date().toLocaleString()}] ERROR: ${message}\n${errorMessage}`);
             } else {
                 console.error(`[AngularHelper] ERROR: ${message}`, error);
             }

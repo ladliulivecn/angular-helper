@@ -1,42 +1,34 @@
 const esbuild = require('esbuild');
+const path = require('path');
+
 const production = process.argv.includes('--production');
 
 async function build() {
-	const result = await esbuild.build({
+	const context = await esbuild.context({
 		entryPoints: ['./src/extension.ts'],
 		bundle: true,
 		outfile: 'dist/extension.js',
-		external: [
-			'vscode',
-			'typescript',
-			'path',
-			'fs',
-			'util'
-		],
+		external: ['vscode'],
+		format: 'cjs',
 		platform: 'node',
 		target: 'node16',
-		minify: production,
 		sourcemap: !production,
-		treeShaking: true,
-		format: 'cjs',
+		minify: production,
+		mainFields: ['module', 'main'],
 		define: {
 			'process.env.NODE_ENV': production ? '"production"' : '"development"'
-		},
-		metafile: true,
-		mainFields: ['module', 'main'],
-		bundle: true,
-		logLevel: 'info',
-		drop: production ? ['console', 'debugger'] : [],
-		pure: production ? ['console.log', 'console.info', 'console.debug', 'console.trace'] : [],
+		}
 	});
 
-	if (production) {
-		const text = await esbuild.analyzeMetafile(result.metafile);
-		console.log('构建分析:\n' + text);
+	if (process.argv.includes('--watch')) {
+		await context.watch();
+	} else {
+		await context.rebuild();
+		await context.dispose();
 	}
 }
 
 build().catch((err) => {
-	console.error('构建失败:', err);
+	console.error(err);
 	process.exit(1);
 });
