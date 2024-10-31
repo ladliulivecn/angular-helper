@@ -169,8 +169,8 @@ export class HtmlParser {
             this.extractFilterReferences(document, expression, fileInfo, match.index + 2);
         }
 
-        // 解析 ng-bind 属性中的表达式
-        const ngBindRegex = /ng-bind\s*=\s*["']([^"']+)["']/g;
+        // 解析 ng-bind 和 ng-bind-html 属性中的表达式
+        const ngBindRegex = /ng-bind(?:-html)?\s*=\s*["']([^"']+)["']/g;
         while ((match = ngBindRegex.exec(content)) !== null) {
             const expression = match[1];
             const startIndex = match.index + match[0].indexOf(expression);
