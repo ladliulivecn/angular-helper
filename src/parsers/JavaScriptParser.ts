@@ -34,6 +34,8 @@ export class JavaScriptParser {
     }
 
     public parseJavaScriptContent(content: string, fileInfo: FileInfo, document: vscode.TextDocument): void {
+        const scriptStartPosition = this.findScriptPosition(content, document);
+        
         const sourceFile = ts.createSourceFile(
             'inline.js',
             content,
@@ -41,20 +43,20 @@ export class JavaScriptParser {
             true
         );
 
-        this.parseNode(sourceFile, fileInfo, document);
+        this.parseNode(sourceFile, fileInfo, document, scriptStartPosition);
     }
 
-    private parseNode(node: ts.Node, fileInfo: FileInfo, document: vscode.TextDocument): void {
+    private parseNode(node: ts.Node, fileInfo: FileInfo, document: vscode.TextDocument, scriptStartPosition: number = 0): void {
         if (ts.isExpressionStatement(node)) {
-            this.handleExpressionStatement(fileInfo, node, document);
+            this.handleExpressionStatement(fileInfo, node, document, scriptStartPosition);
         } else if (ts.isCallExpression(node)) {
-            this.handleCallExpression(fileInfo, node, document);
+            this.handleCallExpression(fileInfo, node, document, scriptStartPosition);
         }
 
-        ts.forEachChild(node, child => this.parseNode(child, fileInfo, document));
+        ts.forEachChild(node, child => this.parseNode(child, fileInfo, document, scriptStartPosition));
     }
 
-    private handleExpressionStatement(fileInfo: FileInfo, node: ts.ExpressionStatement, document: vscode.TextDocument) {
+    private handleExpressionStatement(fileInfo: FileInfo, node: ts.ExpressionStatement, document: vscode.TextDocument, scriptStartPosition: number) {
         if (ts.isBinaryExpression(node.expression) && node.expression.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
             const left = node.expression.left;
             const right = node.expression.right;
@@ -62,13 +64,18 @@ export class JavaScriptParser {
                 const object = left.expression;
                 const property = left.name;
                 if (ts.isIdentifier(object) && ts.isIdentifier(property) && object.text === '$scope') {
-                    const position = document.offsetAt(document.positionAt(property.getStart()));
+                    const position = scriptStartPosition + property.getStart();
+                    
                     if (ts.isFunctionExpression(right) || ts.isArrowFunction(right)) {
                         this.addScopeFunction(fileInfo, property.text, position, true);
-                        FileUtils.logDebugForFindDefinitionAndReference(`找到 $scope 函数定义: ${property.text}, 位置: ${document.fileName}, 行 ${document.positionAt(position).line + 1}, 列 ${document.positionAt(position).character + 1}`);
+                        const pos = document.positionAt(position);
+                        FileUtils.logDebugForFindDefinitionAndReference(
+                            `找到 $scope 函数定义: ${property.text}, 位置: ${document.fileName}, ` +
+                            `行 ${pos.line + 1}, 列 ${pos.character + 1}, ` +
+                            `脚本开始位置: ${scriptStartPosition}, 节点位置: ${property.getStart()}, 最终位置: ${position}`
+                        );
                     } else {
                         this.addScopeVariable(fileInfo, property.text, position, true);
-                        FileUtils.logDebugForFindDefinitionAndReference(`找到 $scope 变量定义: ${property.text}, 位置: ${document.fileName}, 行 ${document.positionAt(position).line + 1}, 列 ${document.positionAt(position).character + 1}`);
                     }
                 }
             }
@@ -119,7 +126,7 @@ export class JavaScriptParser {
         });
     }
 
-    private handleCallExpression(fileInfo: FileInfo, node: ts.CallExpression, document: vscode.TextDocument) {
+    private handleCallExpression(fileInfo: FileInfo, node: ts.CallExpression, document: vscode.TextDocument, scriptStartPosition: number) {
         if (ts.isPropertyAccessExpression(node.expression) && 
             ts.isIdentifier(node.expression.expression) &&
             node.expression.expression.text === 'app' &&
@@ -148,5 +155,32 @@ export class JavaScriptParser {
                 );
             }
         }
+
+        if (ts.isPropertyAccessExpression(node.expression)) {
+            const object = node.expression.expression;
+            const property = node.expression.name;
+            
+            if (ts.isIdentifier(object) && 
+                ts.isIdentifier(property) && 
+                object.text === '$scope') {
+                
+                const position = scriptStartPosition + property.getStart();
+                
+                this.addScopeFunction(fileInfo, property.text, position, false);
+                
+                const pos = document.positionAt(position);
+                FileUtils.logDebugForFindDefinitionAndReference(
+                    `找到 $scope 函数引用: ${property.text}, 位置: ${document.fileName}, ` +
+                    `行 ${pos.line + 1}, 列 ${pos.character + 1}, ` +
+                    `脚本开始位置: ${scriptStartPosition}, 节点位置: ${property.getStart()}, 最终位置: ${position}`
+                );
+            }
+        }
+    }
+
+    private findScriptPosition(scriptContent: string, document: vscode.TextDocument): number {
+        const fullContent = document.getText();
+        const scriptIndex = fullContent.indexOf(scriptContent);
+        return scriptIndex >= 0 ? scriptIndex : 0;
     }
 }
