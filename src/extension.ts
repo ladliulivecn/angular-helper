@@ -27,7 +27,7 @@ let cancelTokenSource: vscode.CancellationTokenSource | undefined;
 export async function activate(context: vscode.ExtensionContext) {
 	try {
 		outputChannel = vscode.window.createOutputChannel('Angular Helper');		
-		outputChannel.show(); // 强制显示输出面板
+		// outputChannel.show(); // 强制显示输出面板
 		FileUtils.initOutputChannel(outputChannel);
 		FileUtils.log('正在激活 Angular 助手扩展...');
 
