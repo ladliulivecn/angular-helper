@@ -1,7 +1,7 @@
 /* eslint-disable curly */
 import * as vscode from 'vscode';
 import { AngularParser } from './angularParser';
-import { SUPPORTED_LANGUAGES, FileInfo } from './types/types';
+import { FileInfo, SUPPORTED_LANGUAGES } from './types/types';
 import { FileUtils } from './utils/FileUtils';
 
 export class DefinitionProvider implements vscode.DefinitionProvider {
@@ -11,13 +11,16 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
         document: vscode.TextDocument,
         position: vscode.Position,        
     ): Promise<vscode.Location | vscode.Location[] | vscode.LocationLink[] | undefined> {
-        const wordRange = document.getWordRangeAtPosition(position);
-        if (!wordRange) {
+        const propertyChain = this.getPropertyChainAtPosition(document, position);
+        if (!propertyChain) {
             return undefined;
         }
 
-        const word = document.getText(wordRange);
-        FileUtils.logDebugForFindDefinitionAndReference(`正在查找定义或引用: ${word}, 文件: ${document.fileName}, 位置: ${position.line+1}:${position.character+1}`);
+        const word = propertyChain;
+        FileUtils.logDebugForFindDefinitionAndReference(
+            `正在查找定义或引用: ${word}, 文件: ${document.fileName}, ` + 
+            `位置: ${position.line+1}:${position.character+1}`
+        );
 
         const locations: vscode.Location[] = [];
         const definitions: vscode.Location[] = [];
@@ -90,5 +93,42 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
                 }
             }
         }
+    }
+
+    private getPropertyChainAtPosition(document: vscode.TextDocument, position: vscode.Position): string | undefined {
+        const line = document.lineAt(position.line).text;
+        const wordRange = document.getWordRangeAtPosition(position, /[a-zA-Z0-9_$]+/);
+        if (!wordRange) {
+            return undefined;
+        }
+
+        // 获取光标所在的单词
+        const word = document.getText(wordRange);
+
+        // 向前查找属性链的开始
+        const beforeCursor = line.slice(0, wordRange.start.character);
+        let propertyStart = wordRange.start.character;
+        
+        for (let i = beforeCursor.length - 1; i >= 0; i--) {
+            const char = beforeCursor[i];
+            if (char === ' ' || char === '"' || char === "'") break;
+            if (/[a-zA-Z0-9_$.]/.test(char)) {
+                propertyStart = i;
+            } else {
+                break;
+            }
+        }
+
+        // 获取完整的属性链
+        const propertyChain = line.slice(propertyStart, wordRange.end.character);
+        if (/^[a-zA-Z_$][a-zA-Z0-9_$.]*$/.test(propertyChain)) {
+            // 如果属性链以 $scope. 开头，则去掉这个前缀
+            if (propertyChain.startsWith('$scope.')) {
+                return propertyChain.substring(7);  // 7 是 '$scope.' 的长度
+            }
+            return propertyChain;
+        }
+
+        return word;
     }
 }

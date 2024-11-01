@@ -155,7 +155,7 @@ export class AngularParser {
 
         try {
             if (!await FileUtils.fileExists(fileUri)) {
-                throw new Error(`文件不存在: ${absolutePath}`);
+                return;
             }
 
             if (fileExtension === '.html') {

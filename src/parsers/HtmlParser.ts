@@ -1,10 +1,10 @@
 /* eslint-disable curly */
 import * as vscode from 'vscode';
 import { FileInfo } from '../types/types';
+import { FileInfoFactory } from '../utils/FileInfoFactory';
 import { FileUtils } from '../utils/FileUtils';
 import { PathResolver } from '../utils/PathResolver';
 import { JavaScriptParser } from './JavaScriptParser';
-import { FileInfoFactory } from '../utils/FileInfoFactory';
 import { ParserBase } from './ParserBase';
 
 export class HtmlParser extends ParserBase {
@@ -91,7 +91,11 @@ export class HtmlParser extends ParserBase {
             if (!this.shouldIgnoreReference(functionName)) {
                 const position = document.offsetAt(document.positionAt(startIndex + functionMatch.index));
                 this.addFunctionToFileInfo(fileInfo, functionName, position, false);
-                FileUtils.logDebugForFindDefinitionAndReference(`在HTML中找到函数或变量引用: ${functionName}, 位置: ${document.uri.fsPath}, 行 ${document.positionAt(position).line + 1}, 列 ${document.positionAt(position).character + 1}`);
+                FileUtils.logDebugForFindDefinitionAndReference(
+                    `在HTML中找到函数引用: ${functionName}, 位置: ${document.uri.fsPath}, ` +
+                    `行 ${document.positionAt(position).line + 1}, ` +
+                    `列 ${document.positionAt(position).character + 1}`
+                );
             }
         }
     }
@@ -143,8 +147,10 @@ export class HtmlParser extends ParserBase {
         let match;
         while ((match = expressionRegex.exec(content)) !== null) {
             const expression = match[1];
-            this.extractFunctionReferences(document, expression, fileInfo, match.index + 2);  // +2 to skip {{
-            this.extractFilterReferences(document, expression, fileInfo, match.index + 2);
+            const startIndex = match.index + 2;  // +2 to skip {{
+            this.extractFunctionReferences(document, expression, fileInfo, startIndex);
+            this.extractScopeReferences(document, expression, fileInfo, startIndex);
+            this.extractFilterReferences(document, expression, fileInfo, startIndex);
         }
 
         // 解析 ng-bind 和 ng-bind-html 属性中的表达式
@@ -153,15 +159,26 @@ export class HtmlParser extends ParserBase {
             const expression = match[1];
             const startIndex = match.index + match[0].indexOf(expression);
             this.extractFunctionReferences(document, expression, fileInfo, startIndex);
+            this.extractScopeReferences(document, expression, fileInfo, startIndex);
             this.extractFilterReferences(document, expression, fileInfo, startIndex);
         }
 
-        // 解析其他 ng-* 指令中的表达式
-        const directiveRegex = /ng-(if|show|hide|class|style)\s*=\s*["'](.+?)["']/g;
+        // 解析所有 ng-* 指令中的表达式
+        const directiveRegex = /ng-(if|show|hide|repeat|model|class|style)\s*=\s*["']((?:\{.+?\})|(?:.+?))["']/g;
         while ((match = directiveRegex.exec(content)) !== null) {
+            const directive = match[1];
             const expression = match[2];
             const startIndex = match.index + match[0].indexOf(expression);
-            this.extractFunctionReferences(document, expression, fileInfo, startIndex);
+            
+            // 如果是对象语法（以 { 开头），去掉外层的花括号
+            if (expression.startsWith('{') && expression.endsWith('}')) {
+                const innerExpression = expression.slice(1, -1);
+                this.extractFunctionReferences(document, innerExpression, fileInfo, startIndex + 1);
+                this.extractScopeReferences(document, innerExpression, fileInfo, startIndex + 1);
+            } else {
+                this.extractFunctionReferences(document, expression, fileInfo, startIndex);
+                this.extractScopeReferences(document, expression, fileInfo, startIndex);
+            }
         }
     }
 
@@ -189,5 +206,71 @@ export class HtmlParser extends ParserBase {
                 `列 ${document.positionAt(position).character + 1}`
             );
         }
+    }
+
+    private extractScopeReferences(document: vscode.TextDocument, expression: string, fileInfo: FileInfo, startIndex: number): void {
+        // 匹配简单的 scope 变量引用，如 act, rootPath 等
+        const simpleVarRegex = /\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b(?!\s*\()/g;  // 排除函数调用
+        let varMatch;
+        while ((varMatch = simpleVarRegex.exec(expression)) !== null) {
+            const varName = varMatch[1];
+            if (!this.shouldIgnoreReference(varName)) {
+                const position = document.offsetAt(document.positionAt(startIndex + varMatch.index));
+                this.addScopeVariableToFileInfo(fileInfo, varName, position, false);
+            }
+        }
+
+        // 匹配属性访问表达式，如 act.ext_catgory, act.title 等
+        const propertyAccessRegex = /([a-zA-Z_$][a-zA-Z0-9_$]*(?:\.[a-zA-Z_$][a-zA-Z0-9_$]*)+)(?!\s*\()/g;  // 排除函数调用
+        let propMatch;
+        while ((propMatch = propertyAccessRegex.exec(expression)) !== null) {
+            const fullPath = propMatch[1];
+            const parts = fullPath.split('.');
+            
+            // 添加根变量引用（如 act）
+            const rootVar = parts[0];
+            if (!this.shouldIgnoreReference(rootVar)) {
+                const rootPosition = document.offsetAt(document.positionAt(startIndex + propMatch.index));
+                this.addScopeVariableToFileInfo(fileInfo, rootVar, rootPosition, false);
+            }
+
+            // 为每个属性路径添加引用（如 act.ext_catgory）
+            for (let i = 1; i < parts.length; i++) {
+                const partialPath = parts.slice(0, i + 1).join('.');
+                if (!this.shouldIgnoreReference(partialPath)) {
+                    const partPosition = document.offsetAt(document.positionAt(
+                        startIndex + propMatch.index + fullPath.indexOf(partialPath)
+                    ));
+                    this.addScopeVariableToFileInfo(fileInfo, partialPath, partPosition, false);
+                }
+            }
+        }
+    }
+
+    private addScopeVariableToFileInfo(fileInfo: FileInfo, name: string, position: number, isDefinition: boolean) {
+        // 添加到 scopeVariables
+        if (!fileInfo.scopeVariables.has(name)) {
+            fileInfo.scopeVariables.set(name, {
+                name,
+                position,
+                type: 'variable',
+                isDefinition
+            });
+        }
+
+        // 同时添加到 functions 用于引用查找
+        if (!fileInfo.functions.has(name)) {
+            fileInfo.functions.set(name, []);
+        }
+        fileInfo.functions.get(name)!.push({
+            name,
+            position,
+            type: 'variable',
+            isDefinition
+        });
+
+        FileUtils.logDebugForFindDefinitionAndReference(
+            `在HTML中找到scope变量引用: ${name}, 位置: ${position}`
+        );
     }
 }
