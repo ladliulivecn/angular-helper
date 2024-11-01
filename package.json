@@ -4,6 +4,10 @@
   "publisher": "lad",
   "description": "",
   "version": "1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ladliulivecn/angular-helper.git"
+  },
   "engines": {
     "vscode": "^1.93.0"
   },
