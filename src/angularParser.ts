@@ -6,18 +6,17 @@ import { FileAssociationManager } from './managers/FileAssociationManager';
 import { FileInfoManager } from './managers/FileInfoManager';
 import { HtmlParser } from './parsers/HtmlParser';
 import { JavaScriptParser } from './parsers/JavaScriptParser';
+import { ParserBase } from './parsers/ParserBase';
 import { FileInfo, SUPPORTED_LANGUAGES } from './types/types';
 import { FileUtils } from './utils/FileUtils';
 import { PathResolver } from './utils/PathResolver';
-
-
 
 /**
  * Angular 解析器类
  * 这个类负责解析 Angular 项目中的文件，建立文件之间的关联，
  * 并提供查找定义的功能。
  */
-export class AngularParser {
+export class AngularParser extends ParserBase {
     private fileInfoManager: FileInfoManager;
     private fileAssociationManager: FileAssociationManager;
     private jsParser: JavaScriptParser;
@@ -26,16 +25,17 @@ export class AngularParser {
     private parseQueue: vscode.Uri[] = [];
     private isParsingQueue = false;
     private maxConcurrentParsing: number;
-    private parsingFiles: Set<string> = new Set();
+    private readonly DEFAULT_BATCH_SIZE = 5;    
 
     constructor() {
+        super();
         const config = vscode.workspace.getConfiguration('angularHelper');
         this.pathResolver = new PathResolver(config);
         this.fileInfoManager = new FileInfoManager(config);
         this.htmlParser = new HtmlParser(this.pathResolver);
         this.jsParser = new JavaScriptParser();
         this.fileAssociationManager = new FileAssociationManager(this.htmlParser, this.jsParser, this.fileInfoManager);
-        this.maxConcurrentParsing = config.get<number>('maxConcurrentParsing') || 5;
+        this.maxConcurrentParsing = config.get<number>('maxConcurrentParsing') || this.DEFAULT_BATCH_SIZE;
     }
 
     /**
@@ -81,29 +81,32 @@ export class AngularParser {
         }
     }
 
+    private async shouldUseCache(file: vscode.Uri, fileInfo: FileInfo): Promise<boolean> {
+        try {
+            const stat = await vscode.workspace.fs.stat(file);
+            const cachedStat = await vscode.workspace.fs.stat(vscode.Uri.file(fileInfo.filePath));
+            return stat.mtime === cachedStat.mtime;
+        } catch (error) {
+            FileUtils.logError(`检查文件缓存状态失败: ${file.fsPath}`, error);
+            return false;
+        }
+    }
+
     public async parseFile(file: vscode.Uri): Promise<void> {
         const filePath = file.fsPath;
-        if (this.parsingFiles.has(filePath)) {
+        if (this.isFileBeingParsed(filePath)) {
             FileUtils.log(`跳过正在解析的文件: ${filePath}`);
             return;
         }
 
         // 检查文件是否已经被解析过且未修改
         const fileInfo = this.fileInfoManager.getFileInfo(filePath);
-        if (fileInfo) {
-            try {
-                const stat = await vscode.workspace.fs.stat(file);
-                const cachedStat = await vscode.workspace.fs.stat(vscode.Uri.file(fileInfo.filePath));
-                if (stat.mtime === cachedStat.mtime) {
-                    FileUtils.logDebugForAssociations(`使用缓存的文件解析结果: ${filePath}`);
-                    return;
-                }
-            } catch (error) {
-                FileUtils.logError(`获取文件状态失败: ${filePath}`, error);
-            }
+        if (fileInfo && await this.shouldUseCache(file, fileInfo)) {
+            FileUtils.logDebugForAssociations(`使用缓存的文件解析结果: ${filePath}`);
+            return;
         }
 
-        this.parsingFiles.add(filePath);
+        this.markFileAsParsing(filePath);
 
         try {
             const document = await vscode.workspace.openTextDocument(file);
@@ -119,14 +122,22 @@ export class AngularParser {
                 this.fileAssociationManager.clearAssociationsForFile(filePath);
                 this.fileAssociationManager.setAssociation(filePath, associatedJsFiles);
                 
-                // 直接解析关联的 JS 文件，因为 FileAssociationManager 已经处理了去重
-                for (const jsFile of associatedJsFiles) {
-                    await this.parseFile(vscode.Uri.file(jsFile));
-                }
+                // 解析关联文件                
+                await this.parseAssociatedFiles(associatedJsFiles);
             }
+        } catch (error) {
+            FileUtils.logError(`解析文件失败: ${filePath}`, error);
         } finally {
-            this.parsingFiles.delete(filePath);
+            this.markFileAsFinishedParsing(filePath);
         }
+    }
+
+    private async parseAssociatedFiles(files: string[]): Promise<void> {
+        await Promise.all(
+            files
+                .filter(file => !this.isFileBeingParsed(file))
+                .map(file => this.parseFile(vscode.Uri.file(file)))
+        );
     }
 
     public async prioritizeCurrentFile(document: vscode.TextDocument): Promise<void> {
@@ -134,17 +145,11 @@ export class AngularParser {
             await this.parseFile(document.uri);
 
             if (document.languageId === SUPPORTED_LANGUAGES.HTML) {
-                // FileAssociationManager 已经处理了去重
                 const jsFiles = this.fileAssociationManager.getAssociatedJsFiles(document.fileName);
-                for (const jsFile of jsFiles) {
-                    await this.parseFile(vscode.Uri.file(jsFile));
-                }
+                await this.parseAssociatedFiles(jsFiles);
             } else if (document.languageId === SUPPORTED_LANGUAGES.JAVASCRIPT) {
-                // FileAssociationManager 已经处理了去重
                 const htmlFiles = this.fileAssociationManager.getAssociatedHtmlFiles(document.fileName);
-                for (const htmlFile of htmlFiles) {
-                    await this.parseFile(vscode.Uri.file(htmlFile));
-                }
+                await this.parseAssociatedFiles(htmlFiles);
             }
         }
     }
@@ -182,9 +187,10 @@ export class AngularParser {
 
             // 更新文件关联
             this.fileAssociationManager.clearAssociationsForFile(filePath);
-            for (const jsFile of associatedJsFiles) {
-                await this.fileAssociationManager.analyzeJsFile(vscode.Uri.file(jsFile));
-            }
+            this.fileAssociationManager.setAssociation(filePath, associatedJsFiles);
+            
+            // 并行解析关联的 JS 文件
+            await this.parseAssociatedFiles(associatedJsFiles);
         } catch (error) {
             FileUtils.logError(`更新HTML文件索引时出错 ${filePath}:`, error);
             throw error;
@@ -254,10 +260,11 @@ export class AngularParser {
     }
 
     public updateConfiguration(config: vscode.WorkspaceConfiguration): void {
-        this.maxConcurrentParsing = config.get<number>('maxConcurrentParsing') || 5;
+        this.maxConcurrentParsing = config.get<number>('maxConcurrentParsing') || this.DEFAULT_BATCH_SIZE;
         this.pathResolver.updateConfiguration(config);
         this.fileInfoManager.updateConfiguration(config);        
         // 如果 JavaScriptParser 需要配置更新，也可以在这里添加
         // this.jsParser.updateConfiguration(config);
     }
+
 }

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { AngularParser } from './angularParser';
-import { SUPPORTED_LANGUAGES, FileInfo } from './types/types';
+import { FileInfo, SUPPORTED_LANGUAGES } from './types/types';
 import { FileUtils } from './utils/FileUtils';
 
 export class ReferenceProvider implements vscode.ReferenceProvider {
@@ -26,28 +26,52 @@ export class ReferenceProvider implements vscode.ReferenceProvider {
             this.findReferencesInFileInfo(currentFileInfo, document.uri, word, references);
         } else {
             FileUtils.log(`当前文件未解析: ${document.fileName}`);
+            try {
+                await this.angularParser.parseFile(document.uri);
+                const updatedFileInfo = this.angularParser.getFileInfo(document.uri.fsPath);
+                if (updatedFileInfo) {
+                    this.findReferencesInFileInfo(updatedFileInfo, document.uri, word, references);
+                }
+            } catch (error) {
+                FileUtils.logError(`立即解析文件失败: ${document.fileName}`, error);
+            }
         }
 
-        // 在关联的文件中查找引用
-        if (document.languageId === SUPPORTED_LANGUAGES.JAVASCRIPT) {
-            const htmlFiles = this.angularParser.getAssociatedHtmlFiles(document.uri.fsPath);
-            for (const htmlFile of htmlFiles) {
-                const fileInfo = this.angularParser.getFileInfo(htmlFile);
+        // 并行处理关联文件
+        const associatedFiles = document.languageId === SUPPORTED_LANGUAGES.JAVASCRIPT 
+            ? this.angularParser.getAssociatedHtmlFiles(document.uri.fsPath)
+            : document.languageId === SUPPORTED_LANGUAGES.HTML 
+                ? this.angularParser.getAssociatedJsFiles(document.uri.fsPath)
+                : [];
+
+        // 创建临时 Map 数组来存储每个文件的引用结果
+        const tempReferenceMaps = await Promise.all(
+            associatedFiles.map(async (associatedFile) => {
+                const tempReferences = new Map<string, vscode.Location>();
+                const fileInfo = this.angularParser.getFileInfo(associatedFile);
+                
                 if (fileInfo) {
-                    this.findReferencesInFileInfo(fileInfo, vscode.Uri.file(htmlFile), word, references);
+                    this.findReferencesInFileInfo(fileInfo, vscode.Uri.file(associatedFile), word, tempReferences);
                 } else {
-                    FileUtils.logDebugForFindDefinitionAndReference(`关联的HTML文件未解析: ${htmlFile}`);
+                    try {
+                        await this.angularParser.parseFile(vscode.Uri.file(associatedFile));
+                        const updatedFileInfo = this.angularParser.getFileInfo(associatedFile);
+                        if (updatedFileInfo) {
+                            this.findReferencesInFileInfo(updatedFileInfo, vscode.Uri.file(associatedFile), word, tempReferences);
+                        }
+                    } catch (error) {
+                        const fileType = document.languageId === SUPPORTED_LANGUAGES.JAVASCRIPT ? 'HTML' : 'JS';
+                        FileUtils.logError(`立即解析关联${fileType}文件失败: ${associatedFile}`, error);
+                    }
                 }
-            }
-        } else if (document.languageId === SUPPORTED_LANGUAGES.HTML) {
-            const jsFiles = this.angularParser.getAssociatedJsFiles(document.uri.fsPath);
-            for (const jsFile of jsFiles) {
-                const fileInfo = this.angularParser.getFileInfo(jsFile);
-                if (fileInfo) {
-                    this.findReferencesInFileInfo(fileInfo, vscode.Uri.file(jsFile), word, references);
-                } else {
-                    FileUtils.logDebugForFindDefinitionAndReference(`关联的JS文件未解析: ${jsFile}`);
-                }
+                return tempReferences;
+            })
+        );
+
+        // 合并所有临时 Map 的结果到主 references Map
+        for (const tempMap of tempReferenceMaps) {
+            for (const [key, value] of tempMap) {
+                references.set(key, value);
             }
         }
 
