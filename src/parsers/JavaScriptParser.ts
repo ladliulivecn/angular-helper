@@ -2,35 +2,38 @@ import * as ts from 'typescript';
 import * as vscode from 'vscode';
 import { FileInfo } from '../types/types';
 import { FileUtils } from '../utils/FileUtils';
+import { FileInfoFactory } from '../utils/FileInfoFactory';
+import { ParserBase } from './ParserBase';
 
-export class JavaScriptParser {
-    constructor() {}
+export class JavaScriptParser extends ParserBase {
+    constructor() {
+        super();
+    }
 
     public parseJavaScriptFile(document: vscode.TextDocument): FileInfo {
-        const fileInfo: FileInfo = {
-            filePath: document.uri.fsPath,
-            controllers: new Map(),
-            services: new Map(),
-            directives: new Map(),
-            functions: new Map(),
-            scopeVariables: new Map(),
-            components: new Map(),
-            ngAttributes: new Map(),
-            ngControllers: new Map(),
-            ngRepeatVariables: new Map(),
-            filters: new Map()
-        };
+        const filePath = document.uri.fsPath;
+        if (this.isFileBeingParsed(filePath)) {
+            FileUtils.logDebugForAssociations(`跳过正在解析的JS文件: ${filePath}`);
+            return FileInfoFactory.createEmpty(filePath);
+        }
 
-        const sourceFile = ts.createSourceFile(
-            document.fileName,
-            document.getText(),
-            ts.ScriptTarget.Latest,
-            true
-        );
+        this.markFileAsParsing(filePath);
+        try {
+            const fileInfo = FileInfoFactory.createEmpty(filePath);
+            
+            const sourceFile = ts.createSourceFile(
+                document.fileName,
+                document.getText(),
+                ts.ScriptTarget.Latest,
+                true
+            );
 
-        this.parseNode(sourceFile, fileInfo, document);
+            this.parseNode(sourceFile, fileInfo, document);
 
-        return fileInfo;
+            return fileInfo;
+        } finally {
+            this.markFileAsFinishedParsing(filePath);
+        }
     }
 
     public parseJavaScriptContent(content: string, fileInfo: FileInfo, document: vscode.TextDocument): void {

@@ -4,10 +4,10 @@ import { HtmlParser } from '../parsers/HtmlParser';
 import { JavaScriptParser } from '../parsers/JavaScriptParser';
 import { FileUtils } from '../utils/FileUtils';
 import { FileInfoManager } from './FileInfoManager';
+import { BidirectionalMap } from '../utils/BidirectionalMap';
 
 export class FileAssociationManager {
-    private htmlToJsMap: Map<string, string[]> = new Map();
-    private jsToHtmlMap: Map<string, string[]> = new Map();
+    private fileAssociations = new BidirectionalMap<string, string>();
     private htmlParser: HtmlParser;
     private jsParser: JavaScriptParser;
     private fileInfoManager: FileInfoManager;
@@ -20,22 +20,38 @@ export class FileAssociationManager {
 
     public async buildFileAssociations(files: vscode.Uri[], token: vscode.CancellationToken): Promise<void> {
         FileUtils.logDebugForAssociations(`开始构建文件关联，文件数量: ${files.length}`);
-        for (const file of files) {
-            if (token.isCancellationRequested) {
-                FileUtils.logDebugForAssociations('文件关联构建被取消');
-                return;
+        
+        try {
+            for (const file of files) {
+                if (token.isCancellationRequested) {
+                    FileUtils.logDebugForAssociations('文件关联构建被取消');
+                    return;
+                }
+
+                try {
+                    const filePath = file.fsPath;
+                    const ext = path.extname(filePath).toLowerCase();
+
+                    if (ext === '.html') {
+                        FileUtils.logDebugForAssociations(`分析HTML文件: ${filePath}`);
+                        await this.analyzeHtmlFile(file);
+                    } else {
+                        FileUtils.logDebugForAssociations(`跳过非HTML文件: ${filePath}`);
+                    }
+                } catch (error) {
+                    FileUtils.logError(`处理文件 ${file.fsPath} 时出错`, error);
+                }
             }
 
-            const filePath = file.fsPath;
-            const ext = path.extname(filePath).toLowerCase();
-
-            if (ext === '.html') {
-                FileUtils.logDebugForAssociations(`分析HTML文件: ${filePath}`);
-                await this.analyzeHtmlFile(file);
-            } else {
-                FileUtils.logDebugForAssociations(`跳过非HTML文件: ${filePath}`);
+            // 在构建完成后验证关联的完整性
+            if (!this.validateAssociations()) {
+                FileUtils.logDebugForAssociations('警告：文件关联验证失败，可能存在不一致的双向映射');
             }
+        } catch (error) {
+            FileUtils.logDebugForAssociations(`构建文件关联时出错: ${error}`);
+            throw error;
         }
+        
         FileUtils.logDebugForAssociations('文件关联构建完成');
     }
 
@@ -43,20 +59,19 @@ export class FileAssociationManager {
         try {
             const document = await vscode.workspace.openTextDocument(file);
             FileUtils.logDebugForAssociations(`开始解析HTML文件: ${file.fsPath}`);
-            const { fileInfo, associatedJsFiles } = await this.htmlParser.parseHtmlFile(document);
-
-            // 建立关联关系
-            this.htmlToJsMap.set(file.fsPath, associatedJsFiles);
-            for (const jsFile of associatedJsFiles) {
-                if (!this.jsToHtmlMap.has(jsFile)) {
-                    this.jsToHtmlMap.set(jsFile, []);
-                }
-                const htmlFiles = this.jsToHtmlMap.get(jsFile)!;
-                if (!htmlFiles.includes(file.fsPath)) {
-                    htmlFiles.push(file.fsPath);
-                    FileUtils.logDebugForAssociations(`为JS文件 ${jsFile} 添加关联的HTML文件: ${file.fsPath}`);
-                }
+            
+            // 先检查文件是否正在被解析
+            if (this.htmlParser.isFileBeingParsed(file.fsPath)) {
+                FileUtils.logDebugForAssociations(`跳过解析：文件 ${file.fsPath} 正在被解析`);
+                return;
             }
+
+            // 只有在文件没有被解析的情况下才进行解析
+            const { fileInfo, associatedJsFiles } = await this.htmlParser.parseHtmlFile(document);
+            
+            // 设置关联关系
+            this.fileAssociations.set(file.fsPath, associatedJsFiles);
+            FileUtils.logDebugForAssociations(`为HTML文件 ${file.fsPath} 设置关联的JS文件: ${associatedJsFiles.join(', ')}`);
 
             // 存储HTML文件的解析结果
             this.fileInfoManager.setFileInfo(file.fsPath, fileInfo);
@@ -74,6 +89,12 @@ export class FileAssociationManager {
         try {
             const document = await vscode.workspace.openTextDocument(file);
             FileUtils.logDebugForAssociations(`开始解析JS文件: ${file.fsPath}`);
+            
+            if (this.jsParser.isFileBeingParsed(file.fsPath)) {
+                FileUtils.logDebugForAssociations(`跳过解析：文件 ${file.fsPath} 正在被解析`);
+                return;
+            }
+
             const fileInfo = this.jsParser.parseJavaScriptFile(document);
             this.fileInfoManager.setFileInfo(file.fsPath, fileInfo);
         } catch (error) {
@@ -82,64 +103,37 @@ export class FileAssociationManager {
     }
 
     public getAssociatedJsFiles(htmlFilePath: string): string[] {
-        const jsFiles = this.htmlToJsMap.get(htmlFilePath) || [];
-        FileUtils.logDebugForAssociations(`获取HTML文件 ${htmlFilePath} 关联的JS文件: ${jsFiles.join(', ')}`);
-        return jsFiles;
+        return this.fileAssociations.getForward(htmlFilePath) || [];
     }
 
     public getAssociatedHtmlFiles(jsFilePath: string): string[] {
-        const htmlFiles = this.jsToHtmlMap.get(jsFilePath) || [];
-        FileUtils.logDebugForAssociations(`获取JS文件 ${jsFilePath} 关联的HTML文件: ${htmlFiles.join(', ')}`);
-        return htmlFiles;
+        return this.fileAssociations.getReverse(jsFilePath) || [];
     }
 
     // 添加一个方法来清除特定文件的关联
     public clearAssociationsForFile(filePath: string): void {
         const ext = path.extname(filePath).toLowerCase();
         if (ext === '.html') {
-            const jsFiles = this.htmlToJsMap.get(filePath) || [];
-            this.htmlToJsMap.delete(filePath);
-            for (const jsFile of jsFiles) {
-                const htmlFiles = this.jsToHtmlMap.get(jsFile) || [];
-                const index = htmlFiles.indexOf(filePath);
-                if (index !== -1) {
-                    htmlFiles.splice(index, 1);
-                    if (htmlFiles.length === 0) {
-                        this.jsToHtmlMap.delete(jsFile);
-                    } else {
-                        this.jsToHtmlMap.set(jsFile, htmlFiles);
-                    }
-                }
-            }
+            this.fileAssociations.deleteForward(filePath);
         } else if (ext === '.js') {
-            const htmlFiles = this.jsToHtmlMap.get(filePath) || [];
-            this.jsToHtmlMap.delete(filePath);
-            for (const htmlFile of htmlFiles) {
-                const jsFiles = this.htmlToJsMap.get(htmlFile) || [];
-                const index = jsFiles.indexOf(filePath);
-                if (index !== -1) {
-                    jsFiles.splice(index, 1);
-                    if (jsFiles.length === 0) {
-                        this.htmlToJsMap.delete(htmlFile);
-                    } else {
-                        this.htmlToJsMap.set(htmlFile, jsFiles);
-                    }
-                }
-            }
+            this.fileAssociations.deleteReverse(filePath);
         }
     }
 
     public setAssociation(htmlFilePath: string, jsFilePaths: string[]): void {
-        this.htmlToJsMap.set(htmlFilePath, jsFilePaths);
-        for (const jsFilePath of jsFilePaths) {
-            if (!this.jsToHtmlMap.has(jsFilePath)) {
-                this.jsToHtmlMap.set(jsFilePath, []);
-            }
-            const htmlFiles = this.jsToHtmlMap.get(jsFilePath)!;
-            if (!htmlFiles.includes(htmlFilePath)) {
-                htmlFiles.push(htmlFilePath);
+        this.fileAssociations.set(htmlFilePath, jsFilePaths);
+    }
+
+    public validateAssociations(): boolean {
+        // 验证 HTML -> JS 的关联
+        for (const [htmlFile, jsFiles] of this.fileAssociations.getForwardEntries()) {
+            for (const jsFile of jsFiles) {
+                const htmlFiles = this.fileAssociations.getReverse(jsFile);
+                if (!htmlFiles?.includes(htmlFile)) {
+                    return false;
+                }
             }
         }
-        FileUtils.logDebugForAssociations(`设置HTML文件 ${htmlFilePath} 的关联JS文件: ${jsFilePaths.join(', ')}`);
+        return true;
     }
 }

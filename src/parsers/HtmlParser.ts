@@ -4,29 +4,29 @@ import { FileInfo } from '../types/types';
 import { FileUtils } from '../utils/FileUtils';
 import { PathResolver } from '../utils/PathResolver';
 import { JavaScriptParser } from './JavaScriptParser';
+import { FileInfoFactory } from '../utils/FileInfoFactory';
+import { ParserBase } from './ParserBase';
 
-export class HtmlParser {
+export class HtmlParser extends ParserBase {
     private pathResolver: PathResolver;
     private jsParser: JavaScriptParser;
-    private parsingFiles: Set<string> = new Set();
 
     constructor(pathResolver: PathResolver) {
-        
+        super();
         this.pathResolver = pathResolver;
         this.jsParser = new JavaScriptParser();
     }
+
     public async parseHtmlFile(document: vscode.TextDocument): Promise<{ fileInfo: FileInfo, associatedJsFiles: string[] }> {
         const filePath = document.uri.fsPath;
-        if (this.parsingFiles.has(filePath)) {
+        if (this.isFileBeingParsed(filePath)) {
             FileUtils.logDebugForAssociations(`跳过正在解析的HTML文件: ${filePath}`);
-            return { fileInfo: this.createEmptyFileInfo(document), associatedJsFiles: [] };
+            return { fileInfo: FileInfoFactory.createEmpty(filePath), associatedJsFiles: [] };
         }
 
-        this.parsingFiles.add(filePath);
-        FileUtils.logDebugForAssociations(`开始解析HTML文件: ${filePath}`);
-
+        this.markFileAsParsing(filePath);
         try {
-            const fileInfo: FileInfo = this.createEmptyFileInfo(document);
+            const fileInfo = FileInfoFactory.createEmpty(filePath);
             const content = document.getText();
 
             // 首先解析关联的JS文件
@@ -40,7 +40,7 @@ export class HtmlParser {
 
             return { fileInfo, associatedJsFiles };
         } finally {
-            this.parsingFiles.delete(filePath);
+            this.markFileAsFinishedParsing(filePath);
         }
     }
 
@@ -137,22 +137,6 @@ export class HtmlParser {
         });
     }
 
-    private createEmptyFileInfo(document: vscode.TextDocument): FileInfo {
-        return {
-            filePath: document.uri.fsPath,
-            controllers: new Map(),
-            services: new Map(),
-            directives: new Map(),
-            functions: new Map(),
-            scopeVariables: new Map(),
-            components: new Map(),
-            ngAttributes: new Map(),
-            ngControllers: new Map(),
-            ngRepeatVariables: new Map(),
-            filters: new Map()
-        };
-    }
-
     private parseAngularExpressions(document: vscode.TextDocument, content: string, fileInfo: FileInfo): void {
         // 解析 {{expression}} 中的表达式
         const expressionRegex = /{{(.+?)}}/g;
@@ -172,7 +156,7 @@ export class HtmlParser {
             this.extractFilterReferences(document, expression, fileInfo, startIndex);
         }
 
-        // 解析其他 ng-* 指令中��表达式
+        // 解析其他 ng-* 指令中的表达式
         const directiveRegex = /ng-(if|show|hide|class|style)\s*=\s*["'](.+?)["']/g;
         while ((match = directiveRegex.exec(content)) !== null) {
             const expression = match[2];
