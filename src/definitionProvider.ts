@@ -88,6 +88,9 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
         // 返回所有位置（包括定义和引用）
         const allLocations = [...definitions, ...locations];
         if (allLocations.length > 0) {
+            FileUtils.logDebugForFindDefinitionAndReference(
+                `找到 ${allLocations.length} 个位置`
+            );
             return allLocations;
         }
 
@@ -110,10 +113,14 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 
                 if (ref.isDefinition) {
                     definitions.push(location);
-                    FileUtils.logDebugForFindDefinitionAndReference(`找到 ${word} 的定义，位置: ${uri.fsPath}, 行 ${refPosition.line + 1}, 列 ${refPosition.character + 1}`);
+                    FileUtils.logDebugForFindDefinitionAndReference(
+                        `找到 ${word} 的定义，位置: ${uri.fsPath}, 行 ${refPosition.line + 1}, 列 ${refPosition.character + 1}`
+                    );
                 } else {
                     locations.push(location);
-                    FileUtils.logDebugForFindDefinitionAndReference(`找到 ${word} 的引用，位置: ${uri.fsPath}, 行 ${refPosition.line + 1}, 列 ${refPosition.character + 1}`);
+                    FileUtils.logDebugForFindDefinitionAndReference(
+                        `找到 ${word} 的引用，位置: ${uri.fsPath}, 行 ${refPosition.line + 1}, 列 ${refPosition.character + 1}`
+                    );
                 }
             }
         }
