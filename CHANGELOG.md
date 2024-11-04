@@ -1,9 +1,31 @@
 # Change Log
 
-All notable changes to the "angular-helper" extension will be documented in this file.
+## [1.0.1] - 2024-11-04
 
-Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
+### Added
+- 新增和更新测试用例文件，提高代码覆盖率
 
-## [Unreleased]
+### Fixed
+- 修复 HTML 文件中内联 JavaScript 脚本解析不完整或错误的问题
+- 修复查找引用时缺少重复检查导致的问题
 
-- Initial release
+## [1.0.0]
+
+### Added
+- 初始版本发布
+- Angular 组件定义跳转功能
+- JavaScript 解析支持
+- HTML 模板解析支持
+
+### Changed
+- 优化代码结构和性能
+- 改进解析器逻辑
+
+### Fixed
+- 修复组件解析中的边界情况
+- 修复定义提供程序中的潜在问题
+
+### Technical
+- 重构解析器代码以提高可维护性
+- 添加类型定义和注释
+- 优化错误处理机制
