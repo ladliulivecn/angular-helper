@@ -8,13 +8,50 @@ import { JavaScriptParser } from './JavaScriptParser';
 import { ParserBase } from './ParserBase';
 
 export class HtmlParser extends ParserBase {
-    private pathResolver: PathResolver;
-    private jsParser: JavaScriptParser;
+    // 配置常量
+    private readonly PARSE_CHUNK_SIZE = 50000; // 50KB 的块大小
+    private readonly CACHE_TTL = 30000; // 30秒缓存过期时间
+    private readonly MAX_CACHE_SIZE = 100; // 最大缓存条目数
 
-    constructor(pathResolver: PathResolver) {
+    // 预编译的正则表达式
+    private static readonly COMPILED_REGEXES = {
+        scriptSrc: new RegExp(/<script(?=[\s>])(?:(?!(?:src\s*=\s*['"]|>))[^>])*src\s*=\s*['"]([^'"]+)['"][^>]*>/g),
+        ngDirective: new RegExp(/ng-(\w+)\s*=\s*["'](.+?)["']/g),
+        functionName: new RegExp(/\b([a-zA-Z_$][a-zA-Z0-9_$]*)(?:\s*\(|\s*&&|\s*\|\||\s*\?|\s*:|\s*$)/g),
+        inlineScript: new RegExp(/<script(?![^>]*src=)([^>]*)>([\s\S]*?)<\/script>/g),
+        expression: new RegExp(/{{(.+?)}}/g),
+        ngBind: new RegExp(/ng-bind(?:-html)?\s*=\s*["']([^"']+)["']/g),
+        directive: new RegExp(/ng-(if|show|hide|repeat|model|class|style)\s*=\s*["']((?:\{.+?\})|(?:.+?))["']/g),
+        filter: new RegExp(/\|\s*(\w+)/g),
+        scopeVar: new RegExp(/\$scope\.([a-zA-Z_$][a-zA-Z0-9_$]*)/g)
+    };
+
+
+    // 缓存
+    private parseResultCache = new Map<string, {
+        fileInfo: FileInfo;
+        associatedJsFiles: string[];
+        timestamp: number;
+        hash: string;
+    }>();
+
+    // 缓存常用的忽略列表
+    private static readonly IGNORE_LIST = new Set([
+        'undefined', 'null', 'true', 'false',
+        'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'break',
+        'continue', 'return', 'try', 'catch', 'finally', 'throw',
+        'var', 'let', 'const',
+        'function', 'class',
+        'this', 'super',
+        'Object', 'Array', 'String', 'Number', 'Boolean', 'Function',
+        'Math', 'Date', 'RegExp', 'Error', 'JSON'
+    ]);
+
+    constructor(
+        private pathResolver: PathResolver,
+        private jsParser: JavaScriptParser = new JavaScriptParser()
+    ) {
         super();
-        this.pathResolver = pathResolver;
-        this.jsParser = new JavaScriptParser();
     }
 
     public async parseHtmlFile(document: vscode.TextDocument): Promise<{ fileInfo: FileInfo, associatedJsFiles: string[] }> {
@@ -26,18 +63,36 @@ export class HtmlParser extends ParserBase {
 
         this.markFileAsParsing(filePath);
         try {
-            const fileInfo = FileInfoFactory.createEmpty(filePath);
             const content = document.getText();
+            const contentHash = this.hashContent(content);
 
-            // 首先解析关联的JS文件
-            const associatedJsFiles = await this.parseHtmlForJsFiles(document);
-            FileUtils.logDebugForAssociations(`HTML文件 ${filePath} 关联的JS文件: ${associatedJsFiles.join(', ')}`);
+            // 检查缓存
+            const cached = this.parseResultCache.get(filePath);
+            if (cached && cached.hash === contentHash && (Date.now() - cached.timestamp) < this.CACHE_TTL) {
+                FileUtils.logDebugForAssociations(`使用缓存的解析结果: ${filePath}`);
+                return {
+                    fileInfo: cached.fileInfo,
+                    associatedJsFiles: cached.associatedJsFiles
+                };
+            }
 
-            // 然后解析HTML内容
-            this.parseNgAttributes(document, content, fileInfo);
-            this.parseInlineJavaScript(document, content, fileInfo);
-            this.parseAngularExpressions(document, content, fileInfo);
+            const fileInfo = FileInfoFactory.createEmpty(filePath);
 
+            // 并行处理不同的解析任务
+            const [associatedJsFiles, ngAttributesPromise, inlineJsPromise, expressionsPromise] = await Promise.all([
+                this.parseHtmlForJsFiles(document),
+                this.parseNgAttributesAsync(document, content, fileInfo),
+                this.parseInlineJavaScriptAsync(document, content, fileInfo),
+                this.parseAngularExpressionsAsync(document, content, fileInfo)
+            ]);
+
+            // 等待所有异步任务完成
+            await Promise.all([ngAttributesPromise, inlineJsPromise, expressionsPromise]);
+
+            // 更新缓存
+            this.updateCache(filePath, fileInfo, associatedJsFiles, contentHash);
+
+            FileUtils.logDebugForAssociations(`HTML文件 ${filePath} 解析完成，关联的JS文件: ${associatedJsFiles.join(', ')}`);
             return { fileInfo, associatedJsFiles };
         } finally {
             this.markFileAsFinishedParsing(filePath);
@@ -47,26 +102,30 @@ export class HtmlParser extends ParserBase {
     public async parseHtmlForJsFiles(document: vscode.TextDocument): Promise<string[]> {
         FileUtils.logDebugForAssociations(`开始解析HTML文件以查找关联的JS文件: ${document.uri.fsPath}`);
         const content = document.getText();
-        const scriptRegex = /<script\s+(?:[^>]*?\s+)?src=["']([^"']+)["'][^>]*>/g;
-        const jsFiles: string[] = [];
+        const jsFiles = new Set<string>();
+
+        // 重置正则表达式的 lastIndex
+        HtmlParser.COMPILED_REGEXES.scriptSrc.lastIndex = 0;
+        
         let match;
-        while ((match = scriptRegex.exec(content)) !== null) {
+        while ((match = HtmlParser.COMPILED_REGEXES.scriptSrc.exec(content)) !== null) {
             const scriptSrc = match[1];
             FileUtils.logDebugForAssociations(`找到script标签，src属性值: ${scriptSrc}`);
             const resolvedPath = this.pathResolver.resolveScriptPath(scriptSrc, document.uri);
             if (resolvedPath) {
                 FileUtils.logDebugForAssociations(`解析后的JS文件路径: ${resolvedPath.fsPath}`);
-                jsFiles.push(resolvedPath.fsPath);
+                jsFiles.add(resolvedPath.fsPath);
             }
         }
 
-        return jsFiles;
+        return Array.from(jsFiles);
     }
 
-    private parseNgAttributes(document: vscode.TextDocument, content: string, fileInfo: FileInfo): void {
-        const ngDirectiveRegex = /ng-(\w+)\s*=\s*["'](.+?)["']/g;
+    private async parseNgAttributesAsync(document: vscode.TextDocument, content: string, fileInfo: FileInfo): Promise<void> {
+        return new Promise<void>((resolve) => {
+            HtmlParser.COMPILED_REGEXES.ngDirective.lastIndex = 0;
         let match;
-        while ((match = ngDirectiveRegex.exec(content)) !== null) {
+            while ((match = HtmlParser.COMPILED_REGEXES.ngDirective.exec(content)) !== null) {
             const directive = match[1];
             const value = match[2];
             
@@ -80,12 +139,14 @@ export class HtmlParser extends ParserBase {
                 isDefinition: false
             });
         }
+            resolve();
+        });
     }
 
     private extractFunctionReferences(document: vscode.TextDocument, value: string, fileInfo: FileInfo, startIndex: number): void {
-        const functionNameRegex = /\b([a-zA-Z_$][a-zA-Z0-9_$]*)(?:\s*\(|\s*&&|\s*\|\||\s*\?|\s*:|\s*$)/g;
+        HtmlParser.COMPILED_REGEXES.functionName.lastIndex = 0;
         let functionMatch;
-        while ((functionMatch = functionNameRegex.exec(value)) !== null) {
+        while ((functionMatch = HtmlParser.COMPILED_REGEXES.functionName.exec(value)) !== null) {
             const functionName = functionMatch[1];
             // 忽略数字和 JavaScript 关键字
             if (!this.shouldIgnoreReference(functionName)) {
@@ -103,84 +164,232 @@ export class HtmlParser extends ParserBase {
     private shouldIgnoreReference(name: string): boolean {
         // 忽略数字
         if (/^\d+$/.test(name)) return true;
-
-        // 忽略 JavaScript 关键字和常见的全局对象
-        const ignoreList = [
-            'undefined', 'null', 'true', 'false',
-            'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'break',
-            'continue', 'return', 'try', 'catch', 'finally', 'throw',
-            'var', 'let', 'const',
-            'function', 'class',
-            'this', 'super',
-            'Object', 'Array', 'String', 'Number', 'Boolean', 'Function',
-            'Math', 'Date', 'RegExp', 'Error', 'JSON'
-        ];
-
-        return ignoreList.includes(name);
+        // 使用 Set 提高查找性能
+        return HtmlParser.IGNORE_LIST.has(name);
     }
 
-    private parseInlineJavaScript(document: vscode.TextDocument, content: string, fileInfo: FileInfo): void {
-        FileUtils.logDebugForFindDefinitionAndReference(
-            `开始解析内联JavaScript, 文件: ${document.fileName}`
-        );
+    private async parseInlineJavaScriptAsync(document: vscode.TextDocument, content: string, fileInfo: FileInfo): Promise<void> {
+        const scriptMatches = content.match(/<script[^>]*>([\s\S]*?)<\/script>/g);
+        if (!scriptMatches) return;
 
-        const scriptRegex = /<script(?![^>]*src=)([^>]*)>([\s\S]*?)<\/script>/g;
-        let match;
-        let matchCount = 0;
+        for (const match of scriptMatches) {
+            const scriptContent = match.replace(/<script[^>]*>|<\/script>/g, '').trim();
+            if (!scriptContent) continue;
 
-        while ((match = scriptRegex.exec(content)) !== null) {
-            matchCount++;
-            const attributes = match[1] || '';
-            const scriptContent = match[2];
-            const startPosition = match.index + match[0].indexOf(scriptContent);
-            
-            FileUtils.logDebugForFindDefinitionAndReference(
-                `找到第 ${matchCount} 个script标签:` +
-                `\n位置: ${startPosition}` +
-                `\n属性: ${attributes}` +
-                `\n内容长度: ${scriptContent.length}` +
-                `\n内容前100个字符: ${scriptContent.substring(0, 100)}...` +
-                `\n内容后100个字符: ...${scriptContent.substring(scriptContent.length - 100)}`
-            );
+            await this.jsParser.parseJavaScriptContent(scriptContent, fileInfo, document);
+        }
+    }
 
-            // 检查 script 标签的类型
-            const typeMatch = attributes.match(/type=["']([^"']+)["']/);
-            const scriptType = typeMatch ? typeMatch[1].toLowerCase() : 'text/javascript';
-            
-            // 修改判断逻辑：如果没有type属性或者是JavaScript类型，就处理该脚本
-            if (!typeMatch || scriptType.includes('javascript') || scriptType === 'application/javascript') {
-                if (!scriptContent.trim()) {
-                    FileUtils.logDebugForFindDefinitionAndReference(
-                        `跳过空的脚本内容`
-                    );
-                    continue;
-                }
+    private async parseAngularExpressionsAsync(document: vscode.TextDocument, content: string, fileInfo: FileInfo): Promise<void> {
+        return new Promise<void>((resolve) => {
+            // 分块处理大文件
+            const chunks = this.splitIntoChunks(content);
+            let offset = 0;
 
-                try {
-                    FileUtils.logDebugForFindDefinitionAndReference(
-                        `开始解析脚本内容, 类型: ${scriptType}, 起始位置: ${startPosition}`
-                    );
-                    this.jsParser.parseJavaScriptContent(scriptContent, fileInfo, document);
-                } catch (error) {
-                    FileUtils.logDebugForFindDefinitionAndReference(
-                        `解析内联脚本时发生错误: ${error}`
-                    );
-                }
-            } else {
-                FileUtils.logDebugForFindDefinitionAndReference(
-                    `跳过非JavaScript类型的脚本: ${scriptType}`
-                );
+            for (const chunk of chunks) {
+                // 解析表达式
+                this.parseExpressionInChunk(document, chunk, fileInfo, offset);
+                offset += chunk.length;
             }
+
+            resolve();
+        });
+    }
+
+    private parseExpressionInChunk(document: vscode.TextDocument, chunk: string, fileInfo: FileInfo, offset: number): void {
+        // 解析 {{expression}}
+        this.parseRegexInChunk(HtmlParser.COMPILED_REGEXES.expression, chunk, offset, (match, startIndex) => {
+            const expression = match[1];
+            this.processExpression(document, expression, fileInfo, startIndex + 2);
+        });
+
+        // 解析 ng-bind
+        this.parseRegexInChunk(HtmlParser.COMPILED_REGEXES.ngBind, chunk, offset, (match, startIndex) => {
+            const expression = match[1];
+            this.processExpression(document, expression, fileInfo, startIndex + match[0].indexOf(expression));
+        });
+
+        // 解析 ng-* 指令
+        this.parseRegexInChunk(HtmlParser.COMPILED_REGEXES.directive, chunk, offset, (match, startIndex) => {
+            const expression = match[2];
+            if (expression.startsWith('{') && expression.endsWith('}')) {
+                this.processExpression(document, expression.slice(1, -1), fileInfo, startIndex + match[0].indexOf(expression) + 1);
+            } else {
+                this.processExpression(document, expression, fileInfo, startIndex + match[0].indexOf(expression));
+            }
+        });
+    }
+
+    private parseRegexInChunk(regex: RegExp, chunk: string, offset: number, processor: (match: RegExpExecArray, startIndex: number) => void): void {
+        regex.lastIndex = 0;
+        let match;
+        while ((match = regex.exec(chunk)) !== null) {
+            processor(match, match.index + offset);
+        }
+    }
+
+    private processExpression(document: vscode.TextDocument, expression: string, fileInfo: FileInfo, startIndex: number): void {
+            this.extractFunctionReferences(document, expression, fileInfo, startIndex);
+            this.extractScopeReferences(document, expression, fileInfo, startIndex);
+            this.extractFilterReferences(document, expression, fileInfo, startIndex);
         }
 
-        if (matchCount === 0) {
-            FileUtils.logDebugForFindDefinitionAndReference(
-                `未找到任何内联脚本标签`
+    private splitIntoChunks(content: string): string[] {
+        const chunks: string[] = [];
+        let lastTagEnd = 0;
+        let currentPosition = 0;
+        
+        while (currentPosition < content.length) {
+            const nextChunkEnd = this.findSafeChunkBoundary(
+                content,
+                currentPosition,
+                Math.min(currentPosition + this.PARSE_CHUNK_SIZE, content.length)
             );
-        } else {
-            FileUtils.logDebugForFindDefinitionAndReference(
-                `共找到 ${matchCount} 个script标签`
-            );
+            
+            chunks.push(content.slice(lastTagEnd, nextChunkEnd));
+            lastTagEnd = nextChunkEnd;
+            currentPosition = nextChunkEnd;
+        }
+        
+        return chunks;
+    }
+
+    private findSafeChunkBoundary(content: string, start: number, end: number): number {
+        // 添加最大查找范围限制
+        const MAX_LOOKAHEAD = 1000; // 最大向前查找1000字符
+        const limitedEnd = Math.min(end + MAX_LOOKAHEAD, content.length);
+        
+        const safePoints = [
+            this.findNextTagEnd(content, Math.min(end, limitedEnd)),
+            this.findNextExpressionEnd(content, Math.min(end, limitedEnd)),
+            this.findNextCommentEnd(content, Math.min(end, limitedEnd))
+        ];
+        
+        // 过滤掉无效的分割点
+        const validPoints = safePoints
+            .filter(point => point > start && point <= content.length)
+            .filter(point => this.isValidBoundary(content, point));
+        
+        return validPoints.length > 0 ? Math.min(...validPoints) : end;
+    }
+
+    private isValidBoundary(content: string, position: number): boolean {
+        // 确保不会切割在标签、表达式或注释的中间
+        const surroundingText = content.slice(Math.max(0, position - 10), Math.min(content.length, position + 10));
+        
+        // 检查是否在标签中间
+        if (surroundingText.includes('<') && !surroundingText.includes('>')) return false;
+        
+        // 检查是否在表达式中间
+        if (surroundingText.includes('{{') && !surroundingText.includes('}}')) return false;
+        
+        // 检查是否在注释中间
+        if (surroundingText.includes('<!--') && !surroundingText.includes('-->')) return false;
+        
+        return true;
+    }
+
+    private findNextTagEnd(content: string, position: number): number {
+        let pos = position;
+        while (pos < content.length) {
+            if (content[pos] === '<') {
+                // 查找标签结束位置
+                const tagEnd = content.indexOf('>', pos);
+                if (tagEnd === -1) return content.length;
+                
+                // 检查是否是自闭合标签
+                if (content[tagEnd - 1] === '/') {
+                    return tagEnd + 1;
+                }
+                
+                // 获取标签名
+                const tagMatch = content.slice(pos, tagEnd).match(/<\/?([a-zA-Z][a-zA-Z0-9:-]*)/);
+                if (tagMatch) {
+                    const tagName = tagMatch[1];
+                    if (tagMatch[0].startsWith('</')) {
+                        // 结束标签
+                        return tagEnd + 1;
+            } else {
+                        // 开始标签，查找对应的结束标签
+                        const endTag = `</${tagName}>`;
+                        const endTagPos = content.indexOf(endTag, tagEnd);
+                        if (endTagPos === -1) return content.length;
+                        return endTagPos + endTag.length;
+                    }
+                }
+            }
+            pos++;
+        }
+        return content.length;
+    }
+
+    private findNextExpressionEnd(content: string, position: number): number {
+        let pos = position;
+        let inExpression = false;
+        let bracketCount = 0;
+        
+        while (pos < content.length) {
+            const char = content[pos];
+            if (!inExpression && content.slice(pos, pos + 2) === '{{') {
+                inExpression = true;
+                pos += 2;
+                continue;
+            }
+            
+            if (inExpression) {
+                if (char === '{') bracketCount++;
+                if (char === '}') {
+                    if (bracketCount > 0) {
+                        bracketCount--;
+                    } else if (content[pos + 1] === '}') {
+                        return pos + 2;
+                    }
+                }
+            }
+            pos++;
+        }
+        return content.length;
+    }
+
+    private findNextCommentEnd(content: string, position: number): number {
+        let pos = position;
+        while (pos < content.length) {
+            if (content.slice(pos, pos + 4) === '<!--') {
+                const commentEnd = content.indexOf('-->', pos);
+                if (commentEnd === -1) return content.length;
+                return commentEnd + 3;
+            }
+            pos++;
+        }
+        return content.length;
+    }
+
+    private extractFilterReferences(document: vscode.TextDocument, expression: string, fileInfo: FileInfo, startIndex: number): void {
+        HtmlParser.COMPILED_REGEXES.filter.lastIndex = 0;
+        let filterMatch;
+        while ((filterMatch = HtmlParser.COMPILED_REGEXES.filter.exec(expression)) !== null) {
+            const filterName = filterMatch[1];
+            const position = document.offsetAt(document.positionAt(startIndex + filterMatch.index + filterMatch[0].indexOf(filterName)));
+            
+            if (!fileInfo.filters.has(filterName)) {
+                fileInfo.filters.set(filterName, []);
+            }
+            fileInfo.filters.get(filterName)!.push({
+                name: filterName,
+                position,
+                type: 'filter',
+                isDefinition: false
+            });
+        }
+    }
+
+    private extractScopeReferences(document: vscode.TextDocument, expression: string, fileInfo: FileInfo, startIndex: number): void {
+        HtmlParser.COMPILED_REGEXES.scopeVar.lastIndex = 0;
+        let scopeMatch;
+        while ((scopeMatch = HtmlParser.COMPILED_REGEXES.scopeVar.exec(expression)) !== null) {
+            const variableName = scopeMatch[1];
+            const position = document.offsetAt(document.positionAt(startIndex + scopeMatch.index + scopeMatch[0].indexOf(variableName)));
+            this.addScopeVariableToFileInfo(fileInfo, variableName, position, false);
         }
     }
 
@@ -196,169 +405,49 @@ export class HtmlParser extends ParserBase {
         });
     }
 
-    private parseAngularExpressions(document: vscode.TextDocument, content: string, fileInfo: FileInfo): void {
-        // 解析 {{expression}} 中的表达式
-        const expressionRegex = /{{(.+?)}}/g;
-        let match;
-        while ((match = expressionRegex.exec(content)) !== null) {
-            const expression = match[1];
-            const startIndex = match.index + 2;  // +2 to skip {{
-            this.extractFunctionReferences(document, expression, fileInfo, startIndex);
-            this.extractScopeReferences(document, expression, fileInfo, startIndex);
-            this.extractFilterReferences(document, expression, fileInfo, startIndex);
-        }
-
-        // 解析 ng-bind 和 ng-bind-html 属性中的表达式
-        const ngBindRegex = /ng-bind(?:-html)?\s*=\s*["']([^"']+)["']/g;
-        while ((match = ngBindRegex.exec(content)) !== null) {
-            const expression = match[1];
-            const startIndex = match.index + match[0].indexOf(expression);
-            this.extractFunctionReferences(document, expression, fileInfo, startIndex);
-            this.extractScopeReferences(document, expression, fileInfo, startIndex);
-            this.extractFilterReferences(document, expression, fileInfo, startIndex);
-        }
-
-        // 解析所有 ng-* 指令中的表达式
-        const directiveRegex = /ng-(if|show|hide|repeat|model|class|style)\s*=\s*["']((?:\{.+?\})|(?:.+?))["']/g;
-        while ((match = directiveRegex.exec(content)) !== null) {
-            const directive = match[1];
-            const expression = match[2];
-            const startIndex = match.index + match[0].indexOf(expression);
-            
-            // 如果是对象语法（以 { 开头），去掉外层的花括号
-            if (expression.startsWith('{') && expression.endsWith('}')) {
-                const innerExpression = expression.slice(1, -1);
-                this.extractFunctionReferences(document, innerExpression, fileInfo, startIndex + 1);
-                this.extractScopeReferences(document, innerExpression, fileInfo, startIndex + 1);
-            } else {
-                this.extractFunctionReferences(document, expression, fileInfo, startIndex);
-                this.extractScopeReferences(document, expression, fileInfo, startIndex);
-            }
-        }
-    }
-
-    private extractFilterReferences(document: vscode.TextDocument, expression: string, fileInfo: FileInfo, startIndex: number): void {
-        const filterRegex = /\|\s*(\w+)/g;
-        let filterMatch;
-        while ((filterMatch = filterRegex.exec(expression)) !== null) {
-            const filterName = filterMatch[1];
-            const position = document.offsetAt(document.positionAt(startIndex + filterMatch.index + filterMatch[0].indexOf(filterName)));
-            
-            // 添加 filter 引用
-            if (!fileInfo.filters.has(filterName)) {
-                fileInfo.filters.set(filterName, []);
-            }
-            fileInfo.filters.get(filterName)!.push({
-                name: filterName,
-                position,
-                type: 'filter',
-                isDefinition: false
-            });
-
-            FileUtils.logDebugForFindDefinitionAndReference(
-                `找到 filter 引用: ${filterName}, 位置: ${document.fileName}, ` +
-                `行 ${document.positionAt(position).line + 1}, ` +
-                `列 ${document.positionAt(position).character + 1}`
-            );
-        }
-    }
-
-    private extractScopeReferences(document: vscode.TextDocument, expression: string, fileInfo: FileInfo, startIndex: number): void {
-        // 用于跟踪已处理的变量引用，避免重复
-        const processedReferences = new Set<string>();
-
-        // 修改正则表达式以避免重复匹配
-        // 1. 匹配完整的属性访问表达式
-        const propertyAccessRegex = /\b([a-zA-Z_$][a-zA-Z0-9_$]*(?:\.[a-zA-Z_$][a-zA-Z0-9_$]*)*)\b(?!\s*\()/g;
-        let propMatch;
-        while ((propMatch = propertyAccessRegex.exec(expression)) !== null) {
-            const fullPath = propMatch[1];
-            const parts = fullPath.split('.');
-            
-            // 处理每个部分
-            let currentPath = '';
-            for (let i = 0; i < parts.length; i++) {
-                if (i === 0) {
-                    currentPath = parts[i];
-                } else {
-                    currentPath += '.' + parts[i];
-                }
-                
-                const position = document.offsetAt(document.positionAt(
-                    startIndex + propMatch.index + fullPath.indexOf(currentPath)
-                ));
-                const referenceKey = `${currentPath}:${position}`;
-                
-                if (!this.shouldIgnoreReference(currentPath) && !processedReferences.has(referenceKey)) {
-                    processedReferences.add(referenceKey);
-                    this.addScopeVariableToFileInfo(fileInfo, currentPath, position, false);
-                }
-            }
-        }
-
-        // 2. 匹配单独的标识符（不包含在属性访问表达式中的）
-        const simpleVarRegex = /\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b(?!\s*[\(.])/g;
-        let varMatch;
-        while ((varMatch = simpleVarRegex.exec(expression)) !== null) {
-            const varName = varMatch[1];
-            const position = document.offsetAt(document.positionAt(startIndex + varMatch.index));
-            const referenceKey = `${varName}:${position}`;
-            
-            if (!this.shouldIgnoreReference(varName) && !processedReferences.has(referenceKey)) {
-                processedReferences.add(referenceKey);
-                this.addScopeVariableToFileInfo(fileInfo, varName, position, false);
-            }
-        }
-    }
-
     private addScopeVariableToFileInfo(fileInfo: FileInfo, name: string, position: number, isDefinition: boolean) {
-        // 使用位置信息创建唯一标识
-        const referenceKey = `${name}:${position}`;
-        
-        // 检查是否已经添加过这个位置的引用
-        if (fileInfo.functions.has(name)) {
-            const existingRefs = fileInfo.functions.get(name)!;
-            // 检查是否已存在相同位置的引用
-            if (existingRefs.some(ref => ref.position === position)) {
-                return; // 如果已存在相同位置的引用，直接返回
-            }
-        }
-
-        // 添加到 scopeVariables
-        if (!fileInfo.scopeVariables.has(name)) {
-            fileInfo.scopeVariables.set(name, {
-                name,
-                position,
-                type: 'variable',
-                isDefinition
-            });
-        } else if (isDefinition) {
-            // 如果是定义且位置更早，则更新
-            const existing = fileInfo.scopeVariables.get(name)!;
-            if (position < existing.position) {
-                fileInfo.scopeVariables.set(name, {
-                    name,
-                    position,
-                    type: 'variable',
-                    isDefinition: true
-                });
-            }
-        }
-
-        // 添加到 functions 集合中用于引用查找
-        if (!fileInfo.functions.has(name)) {
-            fileInfo.functions.set(name, []);
-        }
-        
-        fileInfo.functions.get(name)!.push({
+        fileInfo.scopeVariables.set(name, {
             name,
             position,
-            type: 'variable',
+            type: 'scopeVariable',
             isDefinition
         });
+    }
 
-        FileUtils.logDebugForFindDefinitionAndReference(
-            `添加变量${isDefinition ? '定义' : '引用'}: ${name}, 位置: ${position}`
-        );
+    private hashContent(content: string): string {
+        let hash = 0;
+        for (let i = 0; i < content.length; i++) {
+            const char = content.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash;
+        }
+        return hash.toString(36);
+    }
+
+    private updateCache(
+        filePath: string,
+        fileInfo: FileInfo,
+        associatedJsFiles: string[],
+        contentHash: string
+    ): void {
+        const now = Date.now();
+        
+        // 更新缓存
+        this.parseResultCache.set(filePath, {
+            fileInfo,
+            associatedJsFiles,
+            timestamp: now,
+            hash: contentHash
+        });
+
+        // 清理过期缓存
+        if (this.parseResultCache.size > this.MAX_CACHE_SIZE) {
+            const entries = Array.from(this.parseResultCache.entries());
+            entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+            
+            // 删除最旧的条目直到达到目标大小
+            const toDelete = entries.slice(0, entries.length - this.MAX_CACHE_SIZE);
+            toDelete.forEach(([key]) => this.parseResultCache.delete(key));
+        }
     }
 }

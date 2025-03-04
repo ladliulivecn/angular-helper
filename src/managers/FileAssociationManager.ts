@@ -95,7 +95,7 @@ export class FileAssociationManager {
                 return;
             }
 
-            const fileInfo = this.jsParser.parseJavaScriptFile(document);
+            const fileInfo = await this.jsParser.parseJavaScriptFile(document);
             this.fileInfoManager.setFileInfo(file.fsPath, fileInfo);
         } catch (error) {
             FileUtils.logDebugForAssociations(`分析JS文件 ${file.fsPath} 时出错: ${error}`);

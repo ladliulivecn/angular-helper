@@ -1,5 +1,5 @@
-export abstract class ParserBase {
-    protected parsingFiles: Set<string> = new Set();
+export class ParserBase {
+    protected parsingFiles = new Set<string>();
     
     /**
      * 检查文件是否正在被解析

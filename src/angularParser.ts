@@ -25,7 +25,11 @@ export class AngularParser extends ParserBase {
     private parseQueue: vscode.Uri[] = [];
     private isParsingQueue = false;
     private maxConcurrentParsing: number;
-    private readonly DEFAULT_BATCH_SIZE = 5;    
+    private readonly DEFAULT_BATCH_SIZE = 5;
+    
+    // 文件解析状态缓存
+    private fileParsePromises = new Map<string, Promise<void>>();
+    private readonly FILE_PARSE_TIMEOUT = 30000; // 30秒超时
 
     constructor() {
         super();
@@ -46,15 +50,26 @@ export class AngularParser extends ParserBase {
         this.pathResolver.setMockWorkspacePath(mockPath);
     }
 
-    // 保留主要的公共方法，但简化实现
     public async initializeParser(files: vscode.Uri[], token: vscode.CancellationToken): Promise<void> {
         FileUtils.log(`开始初始化解析器，传入的文件数量: ${files.length}`);
 
         const filteredFiles = files.filter(file => !this.pathResolver.shouldIgnore(file.fsPath));
         FileUtils.log(`过滤后的文件数量: ${filteredFiles.length}`);
 
+        // 先构建文件关联
         await this.fileAssociationManager.buildFileAssociations(filteredFiles, token);
-        this.parseQueue = filteredFiles;
+        
+        // 优先解析当前打开的文件
+        const openFiles = vscode.workspace.textDocuments
+            .filter(doc => doc.uri.scheme === 'file')
+            .map(doc => doc.uri);
+        
+        // 将打开的文件移到队列前面
+        this.parseQueue = [
+            ...openFiles,
+            ...filteredFiles.filter(file => !openFiles.some(open => open.fsPath === file.fsPath))
+        ];
+
         await this.processQueue(token);
     }
 
@@ -67,8 +82,13 @@ export class AngularParser extends ParserBase {
                 if (token.isCancellationRequested) {
                     throw new vscode.CancellationError();
                 }
+
+                // 获取下一批要解析的文件
                 const batch = this.parseQueue.splice(0, this.maxConcurrentParsing);
-                await Promise.all(batch.map(file => this.parseFile(file)));
+                
+                // 并行解析文件，但限制并发数
+                const batchPromises = batch.map(file => this.parseFileWithTimeout(file));
+                await Promise.all(batchPromises);
             }
         } catch (error) {
             if (error instanceof vscode.CancellationError) {
@@ -81,11 +101,44 @@ export class AngularParser extends ParserBase {
         }
     }
 
+    private async parseFileWithTimeout(file: vscode.Uri): Promise<void> {
+        const filePath = file.fsPath;
+        
+        // 如果文件已经在解析中，返回现有的 Promise
+        if (this.fileParsePromises.has(filePath)) {
+            return this.fileParsePromises.get(filePath)!;
+        }
+
+        // 创建一个带超时的解析 Promise
+        const parsePromise = new Promise<void>(async (resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error(`解析文件超时: ${filePath}`));
+            }, this.FILE_PARSE_TIMEOUT);
+
+            try {
+                await this.parseFile(file);
+                clearTimeout(timeout);
+                resolve();
+            } catch (error) {
+                clearTimeout(timeout);
+                reject(error);
+            } finally {
+                this.fileParsePromises.delete(filePath);
+            }
+        });
+
+        // 存储 Promise 以便重用
+        this.fileParsePromises.set(filePath, parsePromise);
+        return parsePromise;
+    }
+
     private async shouldUseCache(file: vscode.Uri, fileInfo: FileInfo): Promise<boolean> {
         try {
             const stat = await vscode.workspace.fs.stat(file);
             const cachedStat = await vscode.workspace.fs.stat(vscode.Uri.file(fileInfo.filePath));
-            return stat.mtime === cachedStat.mtime;
+            
+            // 检查文件修改时间和大小
+            return stat.mtime === cachedStat.mtime && stat.size === cachedStat.size;
         } catch (error) {
             FileUtils.logError(`检查文件缓存状态失败: ${file.fsPath}`, error);
             return false;
@@ -94,9 +147,11 @@ export class AngularParser extends ParserBase {
 
     public async parseFile(file: vscode.Uri): Promise<void> {
         const filePath = file.fsPath;
-        if (this.isFileBeingParsed(filePath)) {
-            FileUtils.log(`跳过正在解析的文件: ${filePath}`);
-            return;
+        
+        // 如果文件正在解析中，等待解析完成
+        if (this.fileParsePromises.has(filePath)) {
+            FileUtils.log(`等待文件解析完成: ${filePath}`);
+            return this.fileParsePromises.get(filePath);
         }
 
         // 检查文件是否已经被解析过且未修改
@@ -106,38 +161,59 @@ export class AngularParser extends ParserBase {
             return;
         }
 
-        this.markFileAsParsing(filePath);
-
         try {
             const document = await vscode.workspace.openTextDocument(file);
             
             if (document.languageId === SUPPORTED_LANGUAGES.JAVASCRIPT) {
-                const fileInfo = this.jsParser.parseJavaScriptFile(document);
-                this.fileInfoManager.setFileInfo(filePath, fileInfo);
+                await this.parseJavaScriptFile(document);
             } else if (document.languageId === SUPPORTED_LANGUAGES.HTML) {
-                const { fileInfo, associatedJsFiles } = await this.htmlParser.parseHtmlFile(document);
-                this.fileInfoManager.setFileInfo(filePath, fileInfo);
-                
-                // 更新文件关联
-                this.fileAssociationManager.clearAssociationsForFile(filePath);
-                this.fileAssociationManager.setAssociation(filePath, associatedJsFiles);
-                
-                // 解析关联文件                
-                await this.parseAssociatedFiles(associatedJsFiles);
+                await this.parseHtmlFile(document);
             }
         } catch (error) {
             FileUtils.logError(`解析文件失败: ${filePath}`, error);
-        } finally {
-            this.markFileAsFinishedParsing(filePath);
+            throw error;
         }
     }
 
-    private async parseAssociatedFiles(files: string[]): Promise<void> {
-        await Promise.all(
-            files
-                .filter(file => !this.isFileBeingParsed(file))
-                .map(file => this.parseFile(vscode.Uri.file(file)))
-        );
+    private async parseJavaScriptFile(document: vscode.TextDocument): Promise<void> {
+        const filePath = document.uri.fsPath;
+        try {
+            const fileInfo = await this.jsParser.parseJavaScriptFile(document);
+            this.fileInfoManager.setFileInfo(filePath, fileInfo);
+            
+            // 更新关联的 HTML 文件
+            const htmlFiles = this.fileAssociationManager.getAssociatedHtmlFiles(filePath);
+            await this.updateAssociatedFiles(htmlFiles);
+        } catch (error) {
+            FileUtils.logError(`解析 JavaScript 文件失败: ${filePath}`, error);
+            throw error;
+        }
+    }
+
+    private async parseHtmlFile(document: vscode.TextDocument): Promise<void> {
+        const filePath = document.uri.fsPath;
+        try {
+            const { fileInfo, associatedJsFiles } = await this.htmlParser.parseHtmlFile(document);
+            this.fileInfoManager.setFileInfo(filePath, fileInfo);
+            
+            // 更新文件关联
+            this.fileAssociationManager.clearAssociationsForFile(filePath);
+            this.fileAssociationManager.setAssociation(filePath, associatedJsFiles);
+            
+            // 更新关联的 JS 文件
+            await this.updateAssociatedFiles(associatedJsFiles);
+        } catch (error) {
+            FileUtils.logError(`解析 HTML 文件失败: ${filePath}`, error);
+            throw error;
+        }
+    }
+
+    private async updateAssociatedFiles(files: string[]): Promise<void> {
+        const promises = files
+            .filter(file => !this.fileParsePromises.has(file))
+            .map(file => this.parseFileWithTimeout(vscode.Uri.file(file)));
+        
+        await Promise.all(promises);
     }
 
     public async prioritizeCurrentFile(document: vscode.TextDocument): Promise<void> {
@@ -146,10 +222,10 @@ export class AngularParser extends ParserBase {
 
             if (document.languageId === SUPPORTED_LANGUAGES.HTML) {
                 const jsFiles = this.fileAssociationManager.getAssociatedJsFiles(document.fileName);
-                await this.parseAssociatedFiles(jsFiles);
+                await this.updateAssociatedFiles(jsFiles);
             } else if (document.languageId === SUPPORTED_LANGUAGES.JAVASCRIPT) {
                 const htmlFiles = this.fileAssociationManager.getAssociatedHtmlFiles(document.fileName);
-                await this.parseAssociatedFiles(htmlFiles);
+                await this.updateAssociatedFiles(htmlFiles);
             }
         }
     }
@@ -189,8 +265,7 @@ export class AngularParser extends ParserBase {
             this.fileAssociationManager.clearAssociationsForFile(filePath);
             this.fileAssociationManager.setAssociation(filePath, associatedJsFiles);
             
-            // 并行解析关联的 JS 文件
-            await this.parseAssociatedFiles(associatedJsFiles);
+            await this.updateAssociatedFiles(associatedJsFiles);
         } catch (error) {
             FileUtils.logError(`更新HTML文件索引时出错 ${filePath}:`, error);
             throw error;
@@ -201,7 +276,7 @@ export class AngularParser extends ParserBase {
         const filePath = fileUri.fsPath;
         try {
             const document = await vscode.workspace.openTextDocument(fileUri);
-            const fileInfo = this.jsParser.parseJavaScriptFile(document);
+            const fileInfo = await this.jsParser.parseJavaScriptFile(document);
             this.fileInfoManager.setFileInfo(filePath, fileInfo);
         } catch (error) {
             FileUtils.logError(`更新JavaScript文件索引时出错 ${filePath}:`, error);
