@@ -4,11 +4,18 @@ export interface AngularDefinition {
     type: string;
     value?: string;
     isDefinition: boolean;
+    aliasFor?: string;
 }
 
 export interface NgRepeatExpression {
     position: number;
     variables: string[];
+}
+
+export interface ImportInfo {
+    originalName: string;
+    path: string;
+    isDefault: boolean;
 }
 
 export interface FileInfo {
@@ -23,6 +30,8 @@ export interface FileInfo {
     ngControllers: Map<string, AngularDefinition>;
     ngRepeatVariables: Map<string, NgRepeatExpression>;
     filters: Map<string, AngularDefinition[]>;
+    imports?: Map<string, ImportInfo>;
+    inheritance?: Map<string, string[]>;
 }
 
 /**
