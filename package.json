@@ -3,7 +3,7 @@
   "displayName": "Angular助手",
   "publisher": "lad",
   "description": "",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "repository": {
     "type": "git",
     "url": "https://github.com/ladliulivecn/angular-helper.git"
@@ -65,12 +65,12 @@
             "*.min.js",
             "http://*",
             "https://*",
-            "//cdn.*",
+            "//*",
             ".git/**",
             ".history/**",
             ".idea/**",
             ".vscode/**",
-            "doc/**",
+            "doc/**","docs/**",
             "node_modules/**",
             "dist/**",
             "out/**",
