@@ -110,21 +110,31 @@ function registerProviders() {
 		
 		// 其他事件监听器保持不变
 		vscode.workspace.onDidChangeTextDocument(async event => {
-			if (['html'].includes(event.document.languageId) && angularParser) {
+			if (['html','js'].includes(event.document.languageId) && angularParser) {
 				try {
-					await angularParser.updateFileIndex(event.document.uri);
+					await angularParser.updateFileIndex(event.document.uri, true);
 				} catch (error) {
 					FileUtils.logError(`更新文件索引时出错 ${event.document.uri.fsPath}:`, error);
 				}
 			}
 		}),
 		vscode.workspace.onDidOpenTextDocument(async document => {
-			if (['html'].includes(document.languageId) && angularParser) {
-				FileUtils.log(`优先解析新打开的文件: ${document.fileName}`);
+			if (['html','js'].includes(document.languageId) && angularParser) {
+				const isVisible = vscode.window.visibleTextEditors.some(
+					editor => editor.document.uri.toString() === document.uri.toString()
+				);
+				
 				try {
-					await angularParser.updateFileIndex(document.uri);
+					// 总是建立关联关系
+					await angularParser.updateFileIndex(document.uri, false);
+					
+					// 仅在可见时进行完整解析
+					if (isVisible) {
+						FileUtils.log(`解析可见文件: ${document.fileName}`);
+						await angularParser.updateFileIndex(document.uri, true);
+					}
 				} catch (error) {
-					FileUtils.logError(`更新新打开文件的索引时出错 ${document.fileName}:`, error);
+					FileUtils.logError(`处理打开文件时出错 ${document.fileName}:`, error);
 				}
 			}
 		})

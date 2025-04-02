@@ -145,7 +145,7 @@ export class AngularParser extends ParserBase {
         }
     }
 
-    public async parseFile(file: vscode.Uri): Promise<void> {
+    public async parseFile(file: vscode.Uri, force = false): Promise<void> {
         const filePath = file.fsPath;
         
         // 如果文件正在解析中，等待解析完成
@@ -156,9 +156,31 @@ export class AngularParser extends ParserBase {
 
         // 检查文件是否已经被解析过且未修改
         const fileInfo = this.fileInfoManager.getFileInfo(filePath);
-        if (fileInfo && await this.shouldUseCache(file, fileInfo)) {
+        if (!force && fileInfo && await this.shouldUseCache(file, fileInfo)) {
             FileUtils.logDebugForAssociations(`使用缓存的文件解析结果: ${filePath}`);
             return;
+        }
+
+        // 检查文件是否在可见编辑器中或是可见文件的关联文件
+        const visibleFiles = vscode.window.visibleTextEditors.map(editor => editor.document.uri.fsPath);
+        const isVisible = visibleFiles.includes(filePath);
+        
+        if (!isVisible && !force) {
+            // 检查是否是可见文件的关联文件
+            const isAssociatedFile = visibleFiles.some(visibleFile => {
+                const ext = path.extname(visibleFile).toLowerCase();
+                if (ext === '.html') {
+                    return this.getAssociatedJsFiles(visibleFile).includes(filePath);
+                } else if (ext === '.js') {
+                    return this.getAssociatedHtmlFiles(visibleFile).includes(filePath);
+                }
+                return false;
+            });
+
+            if (!isAssociatedFile) {
+                FileUtils.logDebugForFindDefinitionAndReference(`跳过不可见且非关联文件解析: ${filePath}`);
+                return;
+            }
         }
 
         try {
@@ -230,7 +252,7 @@ export class AngularParser extends ParserBase {
         }
     }
 
-    public async updateFileIndex(fileUri: vscode.Uri): Promise<void> {
+    public async updateFileIndex(fileUri: vscode.Uri, fullParse = false): Promise<void> {
         const absolutePath = fileUri.fsPath;
         const fileExtension = path.extname(absolutePath).toLowerCase();
 
@@ -239,17 +261,53 @@ export class AngularParser extends ParserBase {
                 return;
             }
 
+            // 快速建立关联关系
             if (fileExtension === '.html') {
-                await this.updateHtmlFileIndex(fileUri);
+                await this.quickUpdateHtmlAssociations(fileUri);
             } else if (fileExtension === '.js') {
-                await this.updateJsFileIndex(fileUri);
+                await this.quickUpdateJsAssociations(fileUri);
             } else {
                 throw new Error(`不支持的文件类型: ${fileExtension}, 文件: ${absolutePath}`);
+            }
+
+            // 仅在需要时进行完整解析
+            if (fullParse) {
+                if (fileExtension === '.html') {
+                    await this.updateHtmlFileIndex(fileUri);
+                } else if (fileExtension === '.js') {
+                    await this.updateJsFileIndex(fileUri);
+                }
             }
 
             FileUtils.logDebugForAssociations(`文件索引更新完成: ${absolutePath}`);
         } catch (error) {
             FileUtils.logError(`更新文件索引时出错 ${absolutePath}:`, error);
+            throw error;
+        }
+    }
+
+    private async quickUpdateHtmlAssociations(fileUri: vscode.Uri): Promise<void> {
+        const filePath = fileUri.fsPath;
+        try {
+            const document = await vscode.workspace.openTextDocument(fileUri);
+            const { associatedJsFiles } = await this.htmlParser.parseHtmlFileAssociations(document);
+            this.fileAssociationManager.clearAssociationsForFile(filePath);
+            this.fileAssociationManager.setAssociation(filePath, associatedJsFiles);
+        } catch (error) {
+            FileUtils.logError(`快速更新HTML关联时出错 ${filePath}:`, error);
+            throw error;
+        }
+    }
+
+    private async quickUpdateJsAssociations(fileUri: vscode.Uri): Promise<void> {
+        const filePath = fileUri.fsPath;
+        try {
+            const document = await vscode.workspace.openTextDocument(fileUri);
+            const { associatedHtmlFiles } = await this.jsParser.parseJavaScriptFileAssociations(document);
+            this.fileAssociationManager.clearAssociationsForFile(filePath);
+            this.fileAssociationManager.setAssociation(filePath, associatedHtmlFiles);
+        } catch (error) {
+            FileUtils.logError(`快速更新JS关联时出错 ${filePath}:`, error);
             throw error;
         }
     }

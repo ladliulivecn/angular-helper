@@ -143,6 +143,21 @@ export class PathResolver {
     public updateConfiguration(config: vscode.WorkspaceConfiguration): void {
         this.rootDirAliases = config.get<{ [key: string]: string }>('rootDirAliases') || {};
         this.ignorePatterns = config.get<string[]>('ignorePatterns') || [];
-        // 更新其他配置项...
+    }
+
+    public resolveHtmlPath(componentName: string, documentUri: vscode.Uri): vscode.Uri | null {
+        const basePath = this.getWorkspacePath(documentUri);
+        const possibleExtensions = ['.html', '.component.html'];
+        const possibleFolders = ['', 'components/', 'app/', 'src/app/'];
+    
+        for (const folder of possibleFolders) {
+            for (const ext of possibleExtensions) {
+                const possiblePath = path.join(basePath, folder, componentName + ext);
+                if (fs.existsSync(possiblePath)) {
+                    return vscode.Uri.file(possiblePath);
+                }
+            }
+        }
+        return null;
     }
 }

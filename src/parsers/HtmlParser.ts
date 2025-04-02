@@ -121,6 +121,12 @@ export class HtmlParser extends ParserBase {
         return Array.from(jsFiles);
     }
 
+    public async parseHtmlFileAssociations(document: vscode.TextDocument): Promise<{ associatedJsFiles: string[] }> {
+        FileUtils.logDebugForAssociations(`快速解析HTML文件关联: ${document.uri.fsPath}`);
+        const associatedJsFiles = await this.parseHtmlForJsFiles(document);
+        return { associatedJsFiles };
+    }
+
     private async parseNgAttributesAsync(document: vscode.TextDocument, content: string, fileInfo: FileInfo): Promise<void> {
         return new Promise<void>((resolve) => {
             HtmlParser.COMPILED_REGEXES.ngDirective.lastIndex = 0;

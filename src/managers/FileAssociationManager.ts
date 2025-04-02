@@ -58,47 +58,16 @@ export class FileAssociationManager {
     private async analyzeHtmlFile(file: vscode.Uri): Promise<void> {
         try {
             const document = await vscode.workspace.openTextDocument(file);
-            FileUtils.logDebugForAssociations(`开始解析HTML文件: ${file.fsPath}`);
+            FileUtils.logDebugForAssociations(`分析HTML文件关联: ${file.fsPath}`);
             
-            // 先检查文件是否正在被解析
-            if (this.htmlParser.isFileBeingParsed(file.fsPath)) {
-                FileUtils.logDebugForAssociations(`跳过解析：文件 ${file.fsPath} 正在被解析`);
-                return;
-            }
-
-            // 只有在文件没有被解析的情况下才进行解析
-            const { fileInfo, associatedJsFiles } = await this.htmlParser.parseHtmlFile(document);
+            // 只提取关联关系，不进行完整解析
+            const { associatedJsFiles } = await this.htmlParser.parseHtmlFileAssociations(document);
             
             // 设置关联关系
             this.fileAssociations.set(file.fsPath, associatedJsFiles);
             FileUtils.logDebugForAssociations(`为HTML文件 ${file.fsPath} 设置关联的JS文件: ${associatedJsFiles.join(', ')}`);
-
-            // 存储HTML文件的解析结果
-            this.fileInfoManager.setFileInfo(file.fsPath, fileInfo);
-
-            // 解析关联的JS文件
-            for (const jsFile of associatedJsFiles) {
-                await this.analyzeJsFile(vscode.Uri.file(jsFile));
-            }
         } catch (error) {
-            FileUtils.logDebugForAssociations(`分析HTML文件 ${file.fsPath} 时出错: ${error}`);
-        }
-    }
-
-    public async analyzeJsFile(file: vscode.Uri): Promise<void> {
-        try {
-            const document = await vscode.workspace.openTextDocument(file);
-            FileUtils.logDebugForAssociations(`开始解析JS文件: ${file.fsPath}`);
-            
-            if (this.jsParser.isFileBeingParsed(file.fsPath)) {
-                FileUtils.logDebugForAssociations(`跳过解析：文件 ${file.fsPath} 正在被解析`);
-                return;
-            }
-
-            const fileInfo = await this.jsParser.parseJavaScriptFile(document);
-            this.fileInfoManager.setFileInfo(file.fsPath, fileInfo);
-        } catch (error) {
-            FileUtils.logDebugForAssociations(`分析JS文件 ${file.fsPath} 时出错: ${error}`);
+            FileUtils.logDebugForAssociations(`分析HTML文件关联时出错 ${file.fsPath}: ${error}`);
         }
     }
 
