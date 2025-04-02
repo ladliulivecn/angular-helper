@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { FileInfo } from '../types/types';
 import { FileInfoFactory } from '../utils/FileInfoFactory';
 import { FileUtils } from '../utils/FileUtils';
+import { PathResolver } from '../utils/PathResolver';
 import { ParserBase } from './ParserBase';
 
 export class JavaScriptParser extends ParserBase {
@@ -22,8 +23,28 @@ export class JavaScriptParser extends ParserBase {
         'controller', 'service', 'factory', 'directive', 'filter', 'component'
     ]);
 
-    constructor() {
+    private pathResolver: PathResolver | null = null;
+    private initialized = false;
+
+    constructor(pathResolver?: PathResolver) {
         super();
+        this.pathResolver = pathResolver || null;
+    }
+
+    public initialize(config: vscode.WorkspaceConfiguration): void {
+        if (this.initialized) return;
+        
+        if (!this.pathResolver) {
+            this.pathResolver = new PathResolver(config);
+        }
+        
+        this.initialized = true;
+    }
+
+    private ensureInitialized() {
+        if (!this.initialized) {
+            throw new Error('JavaScriptParser must be initialized with config first');
+        }
     }
 
     public async parseJavaScriptFile(document: vscode.TextDocument): Promise<FileInfo> {
@@ -315,6 +336,36 @@ export class JavaScriptParser extends ParserBase {
                 });
                 break;
         }
+    }
+
+    public async parseJavaScriptFileAssociations(document: vscode.TextDocument): Promise<{ associatedHtmlFiles: string[] }> {
+        this.ensureInitialized();
+        FileUtils.logDebugForAssociations(`快速解析JS文件关联: ${document.uri.fsPath}`);
+        const content = document.getText();
+        const sourceFile = this.createSourceFile(document.fileName, content);
+        const associatedHtmlFiles = new Set<string>();
+
+        // 提取Angular组件/指令名称
+        const extractNames = (node: ts.Node) => {
+            if (ts.isCallExpression(node) && this.isAngularModuleMethodCall(node)) {
+                const methodName = (node.expression as ts.PropertyAccessExpression).name.text;
+                const firstArg = node.arguments[0];
+                
+                if (ts.isStringLiteral(firstArg) && (methodName === 'component' || methodName === 'directive')) {
+                    const name = firstArg.text;
+                    if (this.pathResolver) {
+                        const htmlPath = this.pathResolver.resolveHtmlPath(name, document.uri);
+                        if (htmlPath) {
+                            associatedHtmlFiles.add(htmlPath.fsPath);
+                        }
+                    }
+                }
+            }
+            node.forEachChild(extractNames);
+        };
+
+        extractNames(sourceFile);
+        return { associatedHtmlFiles: Array.from(associatedHtmlFiles) };
     }
 
     private handleFilterDefinition(fileInfo: FileInfo, node: ts.CallExpression, document: vscode.TextDocument) {
