@@ -30,4 +30,12 @@ export class FileInfoManager {
     public getAllParsedFiles(): string[] {
         return Array.from(this.fileMap.keys());
     }
+
+    /**
+     * 移除文件信息
+     * @param filePath 要移除的文件路径
+     */
+    public removeFileInfo(filePath: string): void {
+        this.fileMap.delete(filePath);
+    }
 }

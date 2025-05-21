@@ -2,30 +2,23 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import LRUCache from 'lru-cache';
 import { FileUtils } from './FileUtils';
+import { CacheManager } from './CacheManager';
 
 export class PathResolver {
     private ignorePatterns: string[];
     private rootDirAliases: { [key: string]: string };
-    private resolvedPathCache: LRUCache<string, vscode.Uri | null>;
+    private cacheManager: CacheManager;
     private mockWorkspacePath: string | null = null;
 
     constructor(config: vscode.WorkspaceConfiguration) {
         this.ignorePatterns = config.get<string[]>('ignorePatterns') || [];
         this.rootDirAliases = config.get<{ [key: string]: string }>('rootDirAliases') || {};
-        
-        const resolvedPathCacheSize = config.get<number>('resolvedPathCacheSize') || 1000;
-        const resolvedPathCacheTTL = config.get<number>('resolvedPathCacheTTL') || 3600000; // 默认1小时
-
-        this.resolvedPathCache = new LRUCache<string, vscode.Uri | null>({
-            max: resolvedPathCacheSize,
-            ttl: resolvedPathCacheTTL
-        });
+        this.cacheManager = CacheManager.getInstance(config);
     }
 
     public shouldIgnore(filePath: string): boolean {
-        return this.ignorePatterns.some(pattern => 
+        return this.ignorePatterns.some(pattern =>
             new RegExp(this.convertGlobToRegExp(pattern)).test(filePath)
         );
     }
@@ -49,7 +42,7 @@ export class PathResolver {
         }
 
         const cacheKey = `${documentUri.toString()}:${scriptSrc}`;
-        const cachedResult = this.resolvedPathCache.get(cacheKey);
+        const cachedResult = this.cacheManager.getPathCache(cacheKey);
         if (cachedResult !== undefined) {
             FileUtils.logDebugForAssociations(`使用缓存结果: ${cachedResult}`);
             return cachedResult;
@@ -77,10 +70,33 @@ export class PathResolver {
         // 处理相对路径和绝对路径
         if (path.isAbsolute(resolvedPath)) {
             FileUtils.logDebugForAssociations(`处理绝对路径: ${resolvedPath}`);
+            // 检查绝对路径是否存在
+            if (!fs.existsSync(resolvedPath)) {
+                // 如果绝对路径不存在，尝试使用基础路径 + 绝对路径
+                const combinedPath = path.join(basePath, resolvedPath);
+                FileUtils.logDebugForAssociations(`尝试基础路径 + 绝对路径: ${combinedPath}`);
+                if (fs.existsSync(combinedPath)) {
+                    resolvedPath = combinedPath;
+                    FileUtils.logDebugForAssociations(`使用组合路径: ${resolvedPath}`);
+                } else {
+                    // 如果仍然不存在，尝试将前导斜杠移除后与基础路径组合
+                    const withoutLeadingSlash = resolvedPath.replace(/^[\/\\]/, '');
+                    const alternativePath = path.join(basePath, withoutLeadingSlash);
+                    FileUtils.logDebugForAssociations(`尝试移除前导斜杠后的路径: ${alternativePath}`);
+                    if (fs.existsSync(alternativePath)) {
+                        resolvedPath = alternativePath;
+                        FileUtils.logDebugForAssociations(`使用移除前导斜杠后的路径: ${resolvedPath}`);
+                    } else {
+                        FileUtils.logDebugForAssociations(`未找到有效的绝对路径, 返回null`);
+                        this.cacheManager.setPathCache(cacheKey, null);
+                        return null;
+                    }
+                }
+            }
         } else if (resolvedPath.startsWith('./') || resolvedPath.startsWith('../')) {
             const currentDirPath = path.resolve(documentDir, resolvedPath);
             const rootDirPath = path.resolve(basePath, resolvedPath);
-            
+
             if (fs.existsSync(currentDirPath)) {
                 resolvedPath = currentDirPath;
                 FileUtils.logDebugForAssociations(`使用当前目录路径: ${resolvedPath}`);
@@ -89,7 +105,7 @@ export class PathResolver {
                 FileUtils.logDebugForAssociations(`使用根目录路径: ${resolvedPath}`);
             } else {
                 FileUtils.logDebugForAssociations(`未找到有效路径, 返回null`);
-                this.resolvedPathCache.set(cacheKey, null);
+                this.cacheManager.setPathCache(cacheKey, null);
                 return null;
             }
         } else {
@@ -109,7 +125,7 @@ export class PathResolver {
 
             if (!fs.existsSync(resolvedPath)) {
                 FileUtils.logDebugForAssociations(`未找到有效路径, 返回null`);
-                this.resolvedPathCache.set(cacheKey, null);
+                this.cacheManager.setPathCache(cacheKey, null);
                 return null;
             }
         }
@@ -117,9 +133,9 @@ export class PathResolver {
         // 确保使用正确的路径分隔符
         resolvedPath = path.normalize(resolvedPath).replace(/\\/g, '/');
         FileUtils.logDebugForAssociations(`最终解析的路径: ${resolvedPath}`);
-        
+
         const result = vscode.Uri.file(resolvedPath);
-        this.resolvedPathCache.set(cacheKey, result);
+        this.cacheManager.setPathCache(cacheKey, result);
         return result;
     }
 
@@ -143,21 +159,70 @@ export class PathResolver {
     public updateConfiguration(config: vscode.WorkspaceConfiguration): void {
         this.rootDirAliases = config.get<{ [key: string]: string }>('rootDirAliases') || {};
         this.ignorePatterns = config.get<string[]>('ignorePatterns') || [];
+        this.cacheManager = CacheManager.getInstance(config);
     }
 
     public resolveHtmlPath(componentName: string, documentUri: vscode.Uri): vscode.Uri | null {
+        // 使用缓存
+        const cacheKey = `html:${documentUri.toString()}:${componentName}`;
+        const cachedResult = this.cacheManager.getPathCache(cacheKey);
+        if (cachedResult !== undefined) {
+            FileUtils.logDebugForAssociations(`使用缓存的HTML路径结果: ${cachedResult}`);
+            return cachedResult;
+        }
+
         const basePath = this.getWorkspacePath(documentUri);
-        const possibleExtensions = ['.html', '.component.html'];
-        const possibleFolders = ['', 'components/', 'app/', 'src/app/'];
-    
+        const documentDir = path.dirname(documentUri.fsPath);
+        const possibleExtensions = ['.html', '.component.html', '.template.html'];
+
+        // 可能的文件夹位置（从最可能到最不可能）
+        const possibleFolders = [
+            // 1. 同一目录
+            documentDir,
+            // 2. 组件子目录
+            path.join(documentDir, componentName),
+            // 3. 常见的 Angular 目录结构
+            path.join(basePath, 'components', componentName),
+            path.join(basePath, 'app', componentName),
+            path.join(basePath, 'src', 'app', componentName),
+            // 4. 其他可能的目录
+            path.join(basePath, 'components'),
+            path.join(basePath, 'app'),
+            path.join(basePath, 'src', 'app'),
+            // 5. 根目录
+            basePath
+        ];
+
+        // 尝试所有可能的组合
         for (const folder of possibleFolders) {
             for (const ext of possibleExtensions) {
-                const possiblePath = path.join(basePath, folder, componentName + ext);
+                // 尝试直接使用组件名
+                let possiblePath = path.join(folder, componentName + ext);
                 if (fs.existsSync(possiblePath)) {
-                    return vscode.Uri.file(possiblePath);
+                    const result = vscode.Uri.file(possiblePath);
+                    this.cacheManager.setPathCache(cacheKey, result);
+                    return result;
+                }
+
+                // 尝试转换为短横线命名法（kebab-case）
+                const kebabName = this.camelToKebabCase(componentName);
+                if (kebabName !== componentName) {
+                    possiblePath = path.join(folder, kebabName + ext);
+                    if (fs.existsSync(possiblePath)) {
+                        const result = vscode.Uri.file(possiblePath);
+                        this.cacheManager.setPathCache(cacheKey, result);
+                        return result;
+                    }
                 }
             }
         }
+
+        // 缓存未找到的结果
+        this.cacheManager.setPathCache(cacheKey, null);
         return null;
+    }
+
+    private camelToKebabCase(str: string): string {
+        return str.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
     }
 }

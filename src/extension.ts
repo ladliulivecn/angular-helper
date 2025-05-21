@@ -26,7 +26,7 @@ let cancelTokenSource: vscode.CancellationTokenSource | undefined;
  */
 export async function activate(context: vscode.ExtensionContext) {
 	try {
-		outputChannel = vscode.window.createOutputChannel('Angular Helper');		
+		outputChannel = vscode.window.createOutputChannel('Angular Helper');
 		// outputChannel.show(); // 强制显示输出面板
 		FileUtils.initOutputChannel(outputChannel);
 		FileUtils.log('正在激活 Angular 助手扩展...');
@@ -77,7 +77,7 @@ export async function activate(context: vscode.ExtensionContext) {
 			}
 		}
 
-		FileUtils.log('Angular 助手扩展已成功激活');		
+		FileUtils.log('Angular 助手扩展已成功激活');
 
 		// 监听配置变化
 		context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
@@ -86,6 +86,48 @@ export async function activate(context: vscode.ExtensionContext) {
 				angularParser.updateConfiguration(config);
 			}
 		}));
+
+		// 添加文件系统监听
+		const fileSystemWatcher = vscode.workspace.createFileSystemWatcher('**/*.{html,js}');
+
+		// 监听文件变化
+		fileSystemWatcher.onDidChange(async (uri) => {
+			if (angularParser) {
+				try {
+					FileUtils.log(`文件变化: ${uri.fsPath}`);
+					await angularParser.updateFileIndex(uri, true);
+				} catch (error) {
+					FileUtils.logError(`监听文件变化时出错: ${uri.fsPath}`, error);
+				}
+			}
+		});
+
+		// 监听文件创建
+		fileSystemWatcher.onDidCreate(async (uri) => {
+			if (angularParser) {
+				try {
+					FileUtils.log(`新文件创建: ${uri.fsPath}`);
+					await angularParser.updateFileIndex(uri, true);
+				} catch (error) {
+					FileUtils.logError(`监听文件创建时出错: ${uri.fsPath}`, error);
+				}
+			}
+		});
+
+		// 监听文件删除
+		fileSystemWatcher.onDidDelete((uri) => {
+			if (angularParser) {
+				try {
+					FileUtils.log(`文件删除: ${uri.fsPath}`);
+					// 清除关联关系
+					angularParser.clearFileAssociations(uri.fsPath);
+				} catch (error) {
+					FileUtils.logError(`监听文件删除时出错: ${uri.fsPath}`, error);
+				}
+			}
+		});
+
+		context.subscriptions.push(fileSystemWatcher);
 	} catch (error: unknown) {
 		FileUtils.logError('激活 Angular 助手扩展时出错:', error);
 		vscode.window.showErrorMessage(`Angular 助手扩展激活失败: ${error instanceof Error ? error.message : '未知错误'}`);
@@ -107,7 +149,7 @@ function registerProviders() {
 			],
 			definitionProvider!
 		),
-		
+
 		// 其他事件监听器保持不变
 		vscode.workspace.onDidChangeTextDocument(async event => {
 			if (['html','js'].includes(event.document.languageId) && angularParser) {
@@ -123,11 +165,11 @@ function registerProviders() {
 				const isVisible = vscode.window.visibleTextEditors.some(
 					editor => editor.document.uri.toString() === document.uri.toString()
 				);
-				
+
 				try {
 					// 总是建立关联关系
 					await angularParser.updateFileIndex(document.uri, false);
-					
+
 					// 仅在可见时进行完整解析
 					if (isVisible) {
 						FileUtils.log(`解析可见文件: ${document.fileName}`);
@@ -149,7 +191,7 @@ function registerProviders() {
 async function handleConfigChange(e: vscode.ConfigurationChangeEvent) {
 	if (e.affectsConfiguration('angularDefinitionProvider') || e.affectsConfiguration('angularHelper')) {
 		FileUtils.log('Angular 助手配置已更改，正在重新初始化...');
-		
+
 		// 如果正在初始化，取消当前的初始化过程
 		if (isInitializing && cancelTokenSource) {
 			cancelTokenSource.cancel();

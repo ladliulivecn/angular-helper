@@ -11,6 +11,13 @@ import { FileInfo, SUPPORTED_LANGUAGES } from './types/types';
 import { FileUtils } from './utils/FileUtils';
 import { PathResolver } from './utils/PathResolver';
 
+// 文件处理任务类型
+interface FileTask {
+    uri: vscode.Uri;
+    priority: number;
+    fullParse: boolean;
+}
+
 /**
  * Angular 解析器类
  * 这个类负责解析 Angular 项目中的文件，建立文件之间的关联，
@@ -26,10 +33,20 @@ export class AngularParser extends ParserBase {
     private isParsingQueue = false;
     private maxConcurrentParsing: number;
     private readonly DEFAULT_BATCH_SIZE = 5;
-    
+
     // 文件解析状态缓存
     private fileParsePromises = new Map<string, Promise<void>>();
     private readonly FILE_PARSE_TIMEOUT = 30000; // 30秒超时
+
+    // 优先级常量
+    private readonly HIGH_PRIORITY = 1;
+    private readonly NORMAL_PRIORITY = 2;
+    private readonly LOW_PRIORITY = 3;
+
+    // 文件处理队列
+    private fileQueue: FileTask[] = [];
+    private isProcessingQueue = false;
+    private visibleFiles = new Set<string>();
 
     constructor() {
         super();
@@ -58,12 +75,12 @@ export class AngularParser extends ParserBase {
 
         // 先构建文件关联
         await this.fileAssociationManager.buildFileAssociations(filteredFiles, token);
-        
+
         // 优先解析当前打开的文件
         const openFiles = vscode.workspace.textDocuments
             .filter(doc => doc.uri.scheme === 'file')
             .map(doc => doc.uri);
-        
+
         // 将打开的文件移到队列前面
         this.parseQueue = [
             ...openFiles,
@@ -85,7 +102,7 @@ export class AngularParser extends ParserBase {
 
                 // 获取下一批要解析的文件
                 const batch = this.parseQueue.splice(0, this.maxConcurrentParsing);
-                
+
                 // 并行解析文件，但限制并发数
                 const batchPromises = batch.map(file => this.parseFileWithTimeout(file));
                 await Promise.all(batchPromises);
@@ -103,7 +120,7 @@ export class AngularParser extends ParserBase {
 
     private async parseFileWithTimeout(file: vscode.Uri): Promise<void> {
         const filePath = file.fsPath;
-        
+
         // 如果文件已经在解析中，返回现有的 Promise
         if (this.fileParsePromises.has(filePath)) {
             return this.fileParsePromises.get(filePath)!;
@@ -136,7 +153,7 @@ export class AngularParser extends ParserBase {
         try {
             const stat = await vscode.workspace.fs.stat(file);
             const cachedStat = await vscode.workspace.fs.stat(vscode.Uri.file(fileInfo.filePath));
-            
+
             // 检查文件修改时间和大小
             return stat.mtime === cachedStat.mtime && stat.size === cachedStat.size;
         } catch (error) {
@@ -147,7 +164,7 @@ export class AngularParser extends ParserBase {
 
     public async parseFile(file: vscode.Uri, force = false): Promise<void> {
         const filePath = file.fsPath;
-        
+
         // 如果文件正在解析中，等待解析完成
         if (this.fileParsePromises.has(filePath)) {
             FileUtils.log(`等待文件解析完成: ${filePath}`);
@@ -164,7 +181,7 @@ export class AngularParser extends ParserBase {
         // 检查文件是否在可见编辑器中或是可见文件的关联文件
         const visibleFiles = vscode.window.visibleTextEditors.map(editor => editor.document.uri.fsPath);
         const isVisible = visibleFiles.includes(filePath);
-        
+
         if (!isVisible && !force) {
             // 检查是否是可见文件的关联文件
             const isAssociatedFile = visibleFiles.some(visibleFile => {
@@ -185,7 +202,7 @@ export class AngularParser extends ParserBase {
 
         try {
             const document = await vscode.workspace.openTextDocument(file);
-            
+
             if (document.languageId === SUPPORTED_LANGUAGES.JAVASCRIPT) {
                 await this.parseJavaScriptFile(document);
             } else if (document.languageId === SUPPORTED_LANGUAGES.HTML) {
@@ -202,7 +219,7 @@ export class AngularParser extends ParserBase {
         try {
             const fileInfo = await this.jsParser.parseJavaScriptFile(document);
             this.fileInfoManager.setFileInfo(filePath, fileInfo);
-            
+
             // 更新关联的 HTML 文件
             const htmlFiles = this.fileAssociationManager.getAssociatedHtmlFiles(filePath);
             await this.updateAssociatedFiles(htmlFiles);
@@ -217,11 +234,11 @@ export class AngularParser extends ParserBase {
         try {
             const { fileInfo, associatedJsFiles } = await this.htmlParser.parseHtmlFile(document);
             this.fileInfoManager.setFileInfo(filePath, fileInfo);
-            
+
             // 更新文件关联
             this.fileAssociationManager.clearAssociationsForFile(filePath);
             this.fileAssociationManager.setAssociation(filePath, associatedJsFiles);
-            
+
             // 更新关联的 JS 文件
             await this.updateAssociatedFiles(associatedJsFiles);
         } catch (error) {
@@ -234,20 +251,29 @@ export class AngularParser extends ParserBase {
         const promises = files
             .filter(file => !this.fileParsePromises.has(file))
             .map(file => this.parseFileWithTimeout(vscode.Uri.file(file)));
-        
+
         await Promise.all(promises);
     }
 
     public async prioritizeCurrentFile(document: vscode.TextDocument): Promise<void> {
         if (['html', 'javascript'].includes(document.languageId)) {
-            await this.parseFile(document.uri);
+            // 更新可见文件列表
+            this.updateVisibleFiles();
 
+            // 将当前文件添加到队列中，使用高优先级
+            await this.queueFileForProcessing(document.uri, this.HIGH_PRIORITY, true);
+
+            // 将关联文件添加到队列中，使用正常优先级
             if (document.languageId === SUPPORTED_LANGUAGES.HTML) {
                 const jsFiles = this.fileAssociationManager.getAssociatedJsFiles(document.fileName);
-                await this.updateAssociatedFiles(jsFiles);
+                for (const jsFile of jsFiles) {
+                    await this.queueFileForProcessing(vscode.Uri.file(jsFile), this.NORMAL_PRIORITY, true);
+                }
             } else if (document.languageId === SUPPORTED_LANGUAGES.JAVASCRIPT) {
                 const htmlFiles = this.fileAssociationManager.getAssociatedHtmlFiles(document.fileName);
-                await this.updateAssociatedFiles(htmlFiles);
+                for (const htmlFile of htmlFiles) {
+                    await this.queueFileForProcessing(vscode.Uri.file(htmlFile), this.NORMAL_PRIORITY, true);
+                }
             }
         }
     }
@@ -322,7 +348,7 @@ export class AngularParser extends ParserBase {
             // 更新文件关联
             this.fileAssociationManager.clearAssociationsForFile(filePath);
             this.fileAssociationManager.setAssociation(filePath, associatedJsFiles);
-            
+
             await this.updateAssociatedFiles(associatedJsFiles);
         } catch (error) {
             FileUtils.logError(`更新HTML文件索引时出错 ${filePath}:`, error);
@@ -395,9 +421,105 @@ export class AngularParser extends ParserBase {
     public updateConfiguration(config: vscode.WorkspaceConfiguration): void {
         this.maxConcurrentParsing = config.get<number>('maxConcurrentParsing') || this.DEFAULT_BATCH_SIZE;
         this.pathResolver.updateConfiguration(config);
-        this.fileInfoManager.updateConfiguration(config);        
+        this.fileInfoManager.updateConfiguration(config);
         // 如果 JavaScriptParser 需要配置更新，也可以在这里添加
         // this.jsParser.updateConfiguration(config);
+    }
+
+    /**
+     * 清除文件的关联关系
+     * @param filePath 要清除关联关系的文件路径
+     */
+    public clearFileAssociations(filePath: string): void {
+        FileUtils.logDebugForAssociations(`清除文件关联关系: ${filePath}`);
+
+        try {
+            // 清除文件关联
+            this.fileAssociationManager.clearAssociationsForFile(filePath);
+
+            // 清除文件信息
+            this.fileInfoManager.removeFileInfo(filePath);
+
+            FileUtils.logDebugForAssociations(`文件关联关系清除完成: ${filePath}`);
+        } catch (error) {
+            FileUtils.logError(`清除文件关联关系时出错: ${filePath}`, error);
+        }
+    }
+
+    /**
+     * 将文件添加到处理队列中
+     * @param uri 文件URI
+     * @param priority 优先级（1=高，2=中，3=低）
+     * @param fullParse 是否进行完整解析
+     */
+    public async queueFileForProcessing(uri: vscode.Uri, priority: number, fullParse: boolean): Promise<void> {
+        // 检查队列中是否已有此文件
+        const existingIndex = this.fileQueue.findIndex(item => item.uri.fsPath === uri.fsPath);
+
+        if (existingIndex >= 0) {
+            // 如果已存在，更新优先级为最高的
+            this.fileQueue[existingIndex].priority = Math.min(this.fileQueue[existingIndex].priority, priority);
+            this.fileQueue[existingIndex].fullParse = this.fileQueue[existingIndex].fullParse || fullParse;
+            FileUtils.logDebugForAssociations(`更新队列中的文件: ${uri.fsPath}, 优先级: ${this.fileQueue[existingIndex].priority}`);
+        } else {
+            // 否则添加到队列
+            this.fileQueue.push({ uri, priority, fullParse });
+            FileUtils.logDebugForAssociations(`添加文件到队列: ${uri.fsPath}, 优先级: ${priority}`);
+        }
+
+        // 如果队列未在处理中，开始处理
+        if (!this.isProcessingQueue) {
+            await this.processFileQueue();
+        }
+    }
+
+    /**
+     * 处理文件队列
+     */
+    private async processFileQueue(): Promise<void> {
+        if (this.fileQueue.length === 0) {
+            this.isProcessingQueue = false;
+            return;
+        }
+
+        this.isProcessingQueue = true;
+
+        try {
+            // 按优先级排序
+            this.fileQueue.sort((a, b) => a.priority - b.priority);
+
+            // 取出一批文件（最多 maxConcurrentParsing 个）
+            const batch = this.fileQueue.splice(0, this.maxConcurrentParsing);
+            FileUtils.logDebugForAssociations(`处理文件批次，数量: ${batch.length}`);
+
+            // 并行处理这批文件
+            const promises = batch.map(item =>
+                this.updateFileIndex(item.uri, item.fullParse)
+                    .catch(error => {
+                        FileUtils.logError(`处理队列中的文件时出错: ${item.uri.fsPath}`, error);
+                    })
+            );
+
+            await Promise.all(promises);
+
+            // 继续处理队列中的下一批
+            setImmediate(() => this.processFileQueue());
+        } catch (error) {
+            FileUtils.logError('处理文件队列时出错:', error);
+            this.isProcessingQueue = false;
+        }
+    }
+
+    /**
+     * 更新可见文件列表
+     */
+    private updateVisibleFiles(): void {
+        this.visibleFiles.clear();
+        vscode.window.visibleTextEditors.forEach(editor => {
+            if (editor.document.uri.scheme === 'file') {
+                this.visibleFiles.add(editor.document.uri.fsPath);
+            }
+        });
     }
 
 }
